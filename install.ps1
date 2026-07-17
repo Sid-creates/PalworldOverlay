@@ -139,7 +139,7 @@ function Test-PalworldRunning {
 
 function Wait-ForPalworldClosed {
     if (-not (Test-PalworldRunning)) { return $true }
-    Write-WarnLine 'Palworld is running — mod files may be locked.'
+    Write-WarnLine 'Palworld is running  -  mod files may be locked.'
     if (-not (Read-YesNo 'Close Palworld now and continue? (recommended)' $true)) {
         return $false
     }
@@ -190,7 +190,7 @@ function Save-RemoteFile {
             Move-Item -LiteralPath $tmp -Destination $Destination -Force
             return
         } catch {
-            $errors += "$url → $($_.Exception.Message)"
+            $errors += "$url -> $($_.Exception.Message)"
             if (Test-Path -LiteralPath $tmp) {
                 Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
             }
@@ -253,7 +253,7 @@ function Install-NodeViaMsi {
         ) -Wait -PassThru
 
         if ($proc.ExitCode -ne 0 -and $proc.ExitCode -ne 3010) {
-            throw "msiexec failed with exit code $($proc.ExitCode). Right-click install.bat → Run as administrator."
+            throw "msiexec failed with exit code $($proc.ExitCode). Right-click install.bat -> Run as administrator."
         }
 
         Refresh-ProcessPath
@@ -419,7 +419,7 @@ function Prompt-PalworldPath {
                     $manual = $dialog.SelectedPath
                 }
             } catch {
-                Write-WarnLine 'Folder browser unavailable — paste the path instead.'
+                Write-WarnLine 'Folder browser unavailable  -  paste the path instead.'
                 continue
             }
         }
@@ -473,12 +473,12 @@ function Install-CompanionDependencies {
     }
 
     if (-not (Test-Path -LiteralPath (Join-Path $CompanionDir 'package.json'))) {
-        throw "Companion app not found at $CompanionDir — are you running install.bat from the repo root?"
+        throw "Companion app not found at $CompanionDir  -  are you running install.bat from the repo root?"
     }
 
     Refresh-ProcessPath
     if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
-        Write-WarnLine 'npm missing after Node check — retrying Node setup...'
+        Write-WarnLine 'npm missing after Node check  -  retrying Node setup...'
         Ensure-NodeJs
     }
     if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
@@ -526,7 +526,7 @@ function Install-CompanionDependencies {
 
         # Sanity: electron should exist for the overlay
         if (-not (Test-Path -LiteralPath (Join-Path $CompanionDir 'node_modules\electron'))) {
-            Write-WarnLine 'electron package missing — running npm install electron...'
+            Write-WarnLine 'electron package missing  -  running npm install electron...'
             & npm install electron --save
             if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath (Join-Path $CompanionDir 'node_modules\electron'))) {
                 throw 'Companion dependencies incomplete (electron missing).'
@@ -566,7 +566,7 @@ function Install-Ue4ss([string] $Win64Path) {
     }
 
     if (-not (Wait-ForPalworldClosed)) {
-        Add-InstallWarning 'Palworld still running — UE4SS copy may fail. Close the game and rerun install.bat.'
+        Add-InstallWarning 'Palworld still running  -  UE4SS copy may fail. Close the game and rerun install.bat.'
     }
 
     $tempZip = Join-Path $env:TEMP "PalworldOverlay-UE4SS-$([guid]::NewGuid().ToString('N')).zip"
@@ -605,7 +605,7 @@ function Install-Ue4ss([string] $Win64Path) {
         }
 
         if (-not (Test-Path -LiteralPath $ue4ssDll)) {
-            throw 'UE4SS.dll missing after copy — check folder permissions / antivirus.'
+            throw 'UE4SS.dll missing after copy  -  check folder permissions / antivirus.'
         }
         Write-Ok 'UE4SS installed'
     } catch {
@@ -625,7 +625,7 @@ function Enable-ModInModsTxt([string] $ModsTxt, [string] $Name) {
         try {
             $lines = @(Get-Content -LiteralPath $ModsTxt -ErrorAction Stop)
         } catch {
-            Write-WarnLine "Could not read mods.txt — recreating. ($($_.Exception.Message))"
+            Write-WarnLine "Could not read mods.txt  -  recreating. ($($_.Exception.Message))"
             $lines = @()
         }
     }
@@ -687,7 +687,7 @@ function Install-BridgeMod([string] $Win64Path) {
     # Verify enabled
     $modsTxt = Join-Path $modsDir 'mods.txt'
     if (-not (Select-String -LiteralPath $modsTxt -Pattern "$ModName\s*:\s*1" -Quiet)) {
-        throw "Mod copied but not enabled in mods.txt — check $modsTxt"
+        throw "Mod copied but not enabled in mods.txt  -  check $modsTxt"
     }
 
     Write-Ok "Installed $ModName"
@@ -829,7 +829,7 @@ try {
     if (-not $Quiet) {
         Write-Host ''
         Write-Host 'Recovery tips:' -ForegroundColor Yellow
-        Write-Host '  - Right-click install.bat → Run as administrator' -ForegroundColor DarkGray
+        Write-Host '  - Right-click install.bat -> Run as administrator' -ForegroundColor DarkGray
         Write-Host '  - Close Palworld completely, then rerun install.bat' -ForegroundColor DarkGray
         Write-Host '  - Check internet / antivirus blocking downloads' -ForegroundColor DarkGray
         Write-Host '  - Manual Node: https://nodejs.org/' -ForegroundColor DarkGray
