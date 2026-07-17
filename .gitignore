@@ -22,4 +22,5 @@ crash/*
 autoresearch/results.tsv
 autoresearch/run.log
 autoresearch/test.log
+autoresearch/best_score.txt
 
