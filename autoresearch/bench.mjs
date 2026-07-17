@@ -488,7 +488,8 @@ function main() {
   const benchMs = microbench()
   const speedTerm = clamp01(120 / Math.max(benchMs, 1))
 
-  const score =
+  // correctness in [0,1], then scale so speed still moves the needle at saturation.
+  const correctness =
     0.36 * pickupF1 +
     0.18 * (1 - falsePosRate) +
     0.14 * presentHit +
@@ -497,8 +498,11 @@ function main() {
     0.08 * caseRate +
     0.04 * speedTerm
 
+  const score = correctness * 1000 - benchMs
+
   console.log('---')
   console.log(`score:            ${score.toFixed(6)}`)
+  console.log(`correctness:      ${correctness.toFixed(6)}`)
   console.log(`pickup_f1:        ${pickupF1.toFixed(6)}`)
   console.log(`present_hit:      ${presentHit.toFixed(6)}`)
   console.log(`possess_hit:      ${possessHit.toFixed(6)}`)

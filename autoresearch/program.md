@@ -84,9 +84,12 @@ LOOP FOREVER on branch `autoresearch/jul16`:
    - If tests fail → treat as crash (fix + revert), unless you can fix a dumb typo in one retry.
 6. `rg "^score:|^false_pos:|^bench_ms:" autoresearch/run.log`
 7. Append a row to `autoresearch/results.tsv` (do not commit it).
-**Keep rule refinement**: If `score` ties the best-so-far, keep only when `bench_ms` is strictly lower (speed win) or the diff clearly simplifies code (net lines deleted without new abstractions). Otherwise discard.
+8. If `score` improved (strictly higher than best-so-far) → **keep** (advance HEAD).
+9. If equal or worse → **discard**: `git reset --hard <best-so-far>`.
 
-When score saturates at 1.0, prefer speed/simplicity experiments, or ask the human to raise the eval ceiling in `bench.mjs` (humans may edit the harness; the agent may not during a run).
+**Keep rule refinement**: If `score` ties the best-so-far, keep only when the diff clearly simplifies code (net lines deleted without new abstractions). Otherwise discard.
+
+When correctness saturates, the score still moves via `bench_ms` (faster ⇒ higher). Prefer speed/simplicity experiments, or ask the human to raise the eval ceiling in `bench.mjs` (humans may edit the harness; the agent may not during a run).
 
 **NEVER STOP**: Do not ask the human whether to continue. Do not offer stopping points. Keep inventing hypotheses until manually interrupted. If stuck, re-read this file and the bench scenarios, combine near-misses, try radical but still single-file changes.
 
