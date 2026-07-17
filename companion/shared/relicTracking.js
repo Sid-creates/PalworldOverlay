@@ -105,32 +105,45 @@ export function selectPresent(samples, players, opts = {}) {
   const near2 = nearCm * nearCm
   const noPlayers = !players || players.length === 0
 
+  // Prefer a short list: pull picked first, then keep only the nearest candidates
+  // before sorting so large world scans stay cheap under PRESENT_MAX.
   /** @type {Array<RelicSample & { dist2: number }>} */
-  const scored = []
+  const picked = []
+  /** @type {Array<RelicSample & { dist2: number }>} */
+  const near = []
   for (const s of samples) {
     if (!s || !isValidWorldLocation(s.x, s.y, s.z ?? 0)) continue
     const d2 = noPlayers ? 0 : minDist2ToPlayers(players, s.x, s.y)
-    const picked = s.picked === true
-    if (!picked && !noPlayers && d2 > near2) continue
-    scored.push({
+    const isPicked = s.picked === true
+    if (!isPicked && !noPlayers && d2 > near2) continue
+    const row = {
       x: s.x,
       y: s.y,
       z: s.z ?? 0,
-      picked,
-      dist2: picked ? -1 : d2,
-    })
+      picked: isPicked,
+      dist2: isPicked ? -1 : d2,
+    }
+    if (isPicked) picked.push(row)
+    else near.push(row)
   }
 
-  scored.sort((a, b) => a.dist2 - b.dist2)
+  near.sort((a, b) => a.dist2 - b.dist2)
 
   /** @type {RelicSample[]} */
   const out = []
   const seen = new Set()
-  for (const s of scored) {
+  const pushRow = (s) => {
     const key = coordKey(s.x, s.y, s.z)
-    if (seen.has(key)) continue
+    if (seen.has(key)) return
     seen.add(key)
     out.push({ x: s.x, y: s.y, z: s.z, picked: s.picked })
+  }
+  for (const s of picked) {
+    pushRow(s)
+    if (out.length >= max) return out
+  }
+  for (const s of near) {
+    pushRow(s)
     if (out.length >= max) break
   }
   return out
