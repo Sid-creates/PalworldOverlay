@@ -128,6 +128,8 @@ export function selectPresent(samples, players, opts = {}) {
   }
 
   near.sort((a, b) => a.dist2 - b.dist2)
+  // After distance sort we only need ~max rows (a little slack for key dedupe).
+  if (near.length > max + 8) near.length = max + 8
 
   /** @type {RelicSample[]} */
   const out = []
