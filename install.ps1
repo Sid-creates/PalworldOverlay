@@ -15,6 +15,7 @@ param(
     [switch] $SkipMaps,
     [switch] $SkipUe4ss,
     [switch] $SkipNpm,
+    [switch] $SkipNodeInstall,
     [switch] $Launch,
     [switch] $Quiet
 )
@@ -25,6 +26,9 @@ $CompanionDir = Join-Path $RepoRoot 'companion'
 $MapsDir = Join-Path $CompanionDir 'public\maps'
 $BridgeSrc = Join-Path $RepoRoot 'bridge\PalworldAssistBridge'
 $ModName = 'PalworldAssistBridge'
+$MinNodeMajor = 20
+# Official Windows x64 LTS MSI (pinned). Update when bumping the required Node line.
+$NodeMsiUrl = 'https://nodejs.org/dist/v22.17.0/node-v22.17.0-x64.msi'
 $Ue4ssUrl = 'https://github.com/UE4SS-RE/RE-UE4SS/releases/download/v3.0.1/UE4SS_v3.0.1.zip'
 $MapUrls = @{
     'palworld-map.webp'     = 'https://raw.githubusercontent.com/amantu-qbit/palworld-server-manager/main/public/palworld-map.webp'
@@ -55,19 +59,140 @@ function Read-YesNo([string] $Prompt, [bool] $Default = $true) {
     return $answer -match '^[yY]'
 }
 
-function Get-NodeCommand {
+function Refresh-ProcessPath {
+    $machine = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+    $user = [Environment]::GetEnvironmentVariable('Path', 'User')
+    $env:Path = @($machine, $user) -join ';'
+}
+
+function Get-NodeMajorVersion {
     $node = Get-Command node -ErrorAction SilentlyContinue
-    if (-not $node) {
-        throw "Node.js was not found. Install Node.js 20+ from https://nodejs.org/ and rerun install.ps1"
+    if (-not $node) { return $null }
+    try {
+        $versionText = & node -v 2>$null
+    } catch {
+        return $null
     }
-    $versionText = & node -v
     if ($versionText -match 'v?(\d+)') {
-        $major = [int] $Matches[1]
-        if ($major -lt 20) {
-            throw "Node.js $versionText found, but 20+ is required."
+        return [int] $Matches[1]
+    }
+    return $null
+}
+
+function Test-NodeReady {
+    Refresh-ProcessPath
+    $major = Get-NodeMajorVersion
+    if ($null -eq $major) { return $false }
+    if ($major -lt $MinNodeMajor) { return $false }
+    $npm = Get-Command npm -ErrorAction SilentlyContinue
+    return [bool] $npm
+}
+
+function Install-NodeViaWinget {
+    $winget = Get-Command winget -ErrorAction SilentlyContinue
+    if (-not $winget) { return $false }
+
+    if (-not $Quiet) {
+        Write-Host '    trying winget (OpenJS.NodeJS.LTS) ...'
+    }
+    $args = @(
+        'install',
+        '--id', 'OpenJS.NodeJS.LTS',
+        '-e',
+        '--accept-package-agreements',
+        '--accept-source-agreements',
+        '--disable-interactivity'
+    )
+    & winget @args
+    # winget often returns 0 even when already installed; refresh and re-check.
+    Refresh-ProcessPath
+    return (Test-NodeReady)
+}
+
+function Install-NodeViaMsi {
+    $msi = Join-Path $env:TEMP ("PalworldOverlay-node-{0}.msi" -f [guid]::NewGuid().ToString('N'))
+    try {
+        if (-not $Quiet) {
+            Write-Host "    downloading Node.js LTS MSI ..."
+        }
+        Invoke-WebRequest -Uri $NodeMsiUrl -OutFile $msi -UseBasicParsing
+
+        if (-not $Quiet) {
+            Write-Host '    running MSI installer (may prompt for admin) ...'
+        }
+        $proc = Start-Process -FilePath 'msiexec.exe' -ArgumentList @(
+            '/i', "`"$msi`"",
+            '/qn',
+            '/norestart',
+            'ADDLOCAL=ALL'
+        ) -Wait -PassThru
+
+        if ($proc.ExitCode -ne 0 -and $proc.ExitCode -ne 3010) {
+            # 3010 = success, reboot required (we can usually continue)
+            # 1603 often means need elevation
+            throw "msiexec failed with exit code $($proc.ExitCode). Right-click install.bat → Run as administrator and try again."
+        }
+
+        Refresh-ProcessPath
+        # Common default install location if PATH not refreshed yet
+        $defaultNode = 'C:\Program Files\nodejs'
+        if (Test-Path -LiteralPath (Join-Path $defaultNode 'node.exe')) {
+            if ($env:Path -notlike "*$defaultNode*") {
+                $env:Path = "$defaultNode;$env:Path"
+            }
+        }
+        return (Test-NodeReady)
+    } finally {
+        if (Test-Path -LiteralPath $msi) {
+            Remove-Item -LiteralPath $msi -Force -ErrorAction SilentlyContinue
         }
     }
-    return $node.Source
+}
+
+function Ensure-NodeJs {
+    Refresh-ProcessPath
+    if (Test-NodeReady) {
+        $ver = & node -v
+        Write-Ok "Node.js $ver"
+        return
+    }
+
+    $major = Get-NodeMajorVersion
+    if ($null -ne $major -and $major -lt $MinNodeMajor) {
+        Write-WarnLine "Node.js v$major found; need $MinNodeMajor+."
+    } else {
+        Write-WarnLine 'Node.js not found.'
+    }
+
+    if ($SkipNodeInstall) {
+        throw "Node.js $MinNodeMajor+ is required. Install from https://nodejs.org/ or rerun without -SkipNodeInstall."
+    }
+
+    if (-not (Read-YesNo "Install Node.js LTS (v22) automatically now?" $true)) {
+        throw "Node.js $MinNodeMajor+ is required. Install from https://nodejs.org/ and rerun install.bat."
+    }
+
+    $installed = $false
+    try {
+        $installed = Install-NodeViaWinget
+    } catch {
+        Write-WarnLine "winget install failed: $($_.Exception.Message)"
+    }
+
+    if (-not $installed) {
+        try {
+            $installed = Install-NodeViaMsi
+        } catch {
+            throw "Automatic Node.js install failed: $($_.Exception.Message). Install manually from https://nodejs.org/ and rerun install.bat."
+        }
+    }
+
+    if (-not $installed) {
+        throw "Node.js installed but still not on PATH. Close this window, open a new one, and rerun install.bat."
+    }
+
+    $ver = & node -v
+    Write-Ok "Installed Node.js $ver"
 }
 
 function Resolve-Win64Path([string] $InputPath) {
@@ -191,6 +316,11 @@ function Install-CompanionDependencies {
 
     if (-not (Test-Path -LiteralPath (Join-Path $CompanionDir 'package.json'))) {
         throw "Companion app not found at $CompanionDir"
+    }
+
+    Refresh-ProcessPath
+    if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
+        throw 'npm not found on PATH after Node install. Close this window and rerun install.bat.'
     }
 
     Push-Location $CompanionDir
@@ -346,9 +476,8 @@ try {
         Write-Host '-------------------------' -ForegroundColor DarkGray
     }
 
-    Write-Step 'Checking Node.js'
-    $null = Get-NodeCommand
-    Write-Ok 'Node.js OK'
+    Write-Step 'Checking / installing Node.js'
+    Ensure-NodeJs
 
     Write-Step 'Downloading map textures'
     Install-MapTextures

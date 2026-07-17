@@ -16,9 +16,10 @@ Progress is stored locally on your machine.
 ## Requirements
 
 - **Windows** (tested on Palworld PC / Steam)
-- **Node.js 20+** and npm
 - **Palworld 1.0**
-- **[UE4SS](https://github.com/UE4SS-RE/RE-UE4SS)** installed in your Palworld `Win64` folder
+- Internet (first run downloads Node.js if needed, map textures, and optionally UE4SS)
+
+`install.bat` will install **Node.js 20+** automatically when missing (via `winget`, or the official MSI).
 
 ## Installation
 
@@ -30,22 +31,26 @@ From the repo root, double-click **`install.bat`** or run:
 .\install.ps1
 ```
 
+If Node install fails with a permissions error, right-click **`install.bat` → Run as administrator** once.
+
 The installer will:
 
-1. Download map textures into `companion/public/maps/`
-2. Run `npm install` for the companion app
-3. Auto-detect your Palworld `Win64` folder (Steam libraries + common paths)
-4. Install UE4SS if missing (optional prompt)
-5. Copy and enable the `PalworldAssistBridge` mod in `Mods\mods.txt`
-6. Create `%LOCALAPPDATA%\PalworldAssist\`
-7. Create **`start-overlay.bat`** to launch the overlay
+1. Install Node.js LTS if missing / too old
+2. Download map textures into `companion/public/maps/`
+3. Run `npm install` for the companion app
+4. Auto-detect your Palworld `Win64` folder (Steam libraries + common paths)
+5. Install UE4SS if missing (optional prompt)
+6. Copy and enable the `PalworldAssistBridge` mod in `Mods\mods.txt`
+7. Create `%LOCALAPPDATA%\PalworldAssist\`
+8. Create **`start-overlay.bat`** to launch the overlay
 
 Options:
 
 ```powershell
 .\install.ps1 -PalworldPath "D:\SteamLibrary\steamapps\common\Palworld"
-.\install.ps1 -Launch          # install, then start the overlay
-.\install.ps1 -SkipUe4ss       # skip UE4SS download (you already have it)
+.\install.ps1 -Launch            # install, then start the overlay
+.\install.ps1 -SkipUe4ss         # skip UE4SS download (you already have it)
+.\install.ps1 -SkipNodeInstall   # do not auto-install Node
 ```
 
 After install, run **`start-overlay.bat`**, then fully restart Palworld.
