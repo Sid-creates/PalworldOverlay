@@ -274,23 +274,10 @@ export function inferPickupFromPossessCount(
   }
 
   const maxCm = opts.maxCm ?? POSSESS_PICK_MAX_CM
-  const onCollectedCm = opts.onCollectedCm ?? POSSESS_ON_COLLECTED_CM
   const max2 = maxCm * maxCm
-  const onCollected2 = onCollectedCm * onCollectedCm
-
-  // If we're still standing on a seed we already marked, the possess bump is
-  // accounted for — don't steal a nearby unmarked neighbor.
-  for (const m of markers) {
-    if (!m || !progress[m.id]?.collected) continue
-    if (!isFiniteNumber(m.x) || !isFiniteNumber(m.y)) continue
-    if (dist2(player.x, player.y, m.x, m.y) <= onCollected2) {
-      return null
-    }
-  }
 
   let bestId = null
   let best2 = max2
-
   for (const m of markers) {
     if (!m || progress[m.id]?.collected) continue
     if (!isFiniteNumber(m.x) || !isFiniteNumber(m.y)) continue
@@ -298,6 +285,17 @@ export function inferPickupFromPossessCount(
     if (d2 <= best2) {
       best2 = d2
       bestId = m.id
+    }
+  }
+  if (!bestId) return null
+
+  // If a already-collected seed is closer than the candidate, the possess bump
+  // almost certainly belongs to that seed (disappearance path) — don't steal.
+  for (const m of markers) {
+    if (!m || !progress[m.id]?.collected) continue
+    if (!isFiniteNumber(m.x) || !isFiniteNumber(m.y)) continue
+    if (dist2(player.x, player.y, m.x, m.y) < best2) {
+      return null
     }
   }
   return bestId
