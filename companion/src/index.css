@@ -1,0 +1,23 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  font-family: 'Segoe UI', 'Trebuchet MS', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  background: #0e1410;
+  color: #e4ecd8;
+}
+
+button {
+  font-family: inherit;
+}

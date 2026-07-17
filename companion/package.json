@@ -1,0 +1,32 @@
+{
+  "name": "palworld-assist-companion",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "main": "electron/main.mjs",
+  "scripts": {
+    "dev": "vite",
+    "dev:app": "concurrently -k \"vite\" \"wait-on http://127.0.0.1:5173 && electron .\"",
+    "build": "tsc -b && vite build",
+    "lint": "oxlint",
+    "preview": "vite preview",
+    "start": "electron ."
+  },
+  "dependencies": {
+    "concurrently": "^10.0.3",
+    "electron": "^43.1.1",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "wait-on": "^9.0.10",
+    "ws": "^8.21.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.2",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.3",
+    "oxlint": "^1.71.0",
+    "typescript": "~6.0.2",
+    "vite": "^8.1.1"
+  }
+}

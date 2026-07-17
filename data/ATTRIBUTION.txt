@@ -1,0 +1,5 @@
+﻿Seed coordinates derived from:
+https://github.com/oMaN-Rod/palworld-save-pal (MIT) — data/json/relics.json
+
+Map textures (Palpagos + World Tree) and 1.0 DT_WorldMapUIData bounds projection
+via community ports used by palworld-server-manager / palworld-save-pal.

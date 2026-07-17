@@ -1,0 +1,10 @@
+{
+  "mod_name": "PalworldAssistBridge",
+  "mod_version": "0.2.0",
+  "mod_author": "PalworldAssist",
+  "mod_description": "Live player + relic/effigy state for the PalworldAssist companion (writes live.json, no console spawn).",
+  "Name": "PalworldAssistBridge",
+  "Description": "Live player + Lifmunk/Pal effigy state for the PalworldAssist companion",
+  "Version": "0.2.0",
+  "Scripts": ["Scripts/main.lua"]
+}

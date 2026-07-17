@@ -1,0 +1,235 @@
+.app {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  height: 100vh;
+  color: #e4ecd8;
+  background:
+    radial-gradient(1200px 600px at 10% -10%, rgba(120, 160, 80, 0.12), transparent 60%),
+    radial-gradient(900px 500px at 90% 0%, rgba(40, 90, 70, 0.18), transparent 55%),
+    #0e1410;
+}
+
+.shell-loading,
+.shell-error {
+  place-items: center;
+  display: grid;
+  min-height: 100vh;
+  padding: 2rem;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem 1rem;
+  padding: 0.65rem 1rem 0.55rem;
+  border-bottom: 1px solid rgba(180, 210, 150, 0.12);
+  background: rgba(8, 12, 8, 0.72);
+  backdrop-filter: blur(8px);
+}
+
+.category-row {
+  flex: 1 1 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  padding-top: 0.15rem;
+}
+
+.chip {
+  appearance: none;
+  border: 1px solid rgba(180, 210, 150, 0.18);
+  border-radius: 999px;
+  background: rgba(16, 22, 16, 0.7);
+  color: #a8b898;
+  padding: 0.22rem 0.55rem;
+  font: inherit;
+  font-size: 0.72rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.chip .swatch {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--chip, #c8e06a);
+}
+
+.chip.on {
+  color: #eef6dc;
+  border-color: color-mix(in srgb, var(--chip, #c8e06a) 55%, transparent);
+  background: color-mix(in srgb, var(--chip, #c8e06a) 18%, rgba(12, 16, 12, 0.85));
+}
+
+.chip.ghost {
+  color: #8fa07a;
+}
+
+.chip-count {
+  opacity: 0.65;
+  font-variant-numeric: tabular-nums;
+}
+
+.brand-block h1 {
+  margin: 0;
+  font-family: 'Segoe UI Semibold', 'Trebuchet MS', sans-serif;
+  font-size: 1.15rem;
+  letter-spacing: 0.02em;
+}
+
+.brand-block .sub {
+  margin: 0.1rem 0 0;
+  font-size: 0.75rem;
+  color: #9aab8a;
+}
+
+.counter {
+  display: flex;
+  flex-direction: column;
+  min-width: 7rem;
+}
+
+.counter-num {
+  font-size: 1.35rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: #d7f08a;
+}
+
+.counter-label {
+  font-size: 0.72rem;
+  color: #8fa07a;
+}
+
+.filters {
+  display: inline-flex;
+  border: 1px solid rgba(180, 210, 150, 0.2);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.filters button,
+.actions button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: #c5d4b4;
+  padding: 0.4rem 0.75rem;
+  font: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.filters button + button {
+  border-left: 1px solid rgba(180, 210, 150, 0.15);
+}
+
+.filters button.active {
+  background: rgba(200, 224, 106, 0.18);
+  color: #f0ffc8;
+}
+
+.actions {
+  display: flex;
+  gap: 0.4rem;
+  margin-left: auto;
+}
+
+.actions button {
+  border: 1px solid rgba(180, 210, 150, 0.22);
+  border-radius: 8px;
+  background: rgba(20, 28, 18, 0.7);
+}
+
+.actions button:hover,
+.filters button:hover {
+  background: rgba(200, 224, 106, 0.12);
+}
+
+.actions button.danger {
+  border-color: rgba(220, 120, 90, 0.35);
+  color: #f0b8a0;
+}
+
+.status-block,
+.player-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.78rem;
+  color: #9aab8a;
+}
+
+.player-chip {
+  padding: 0.25rem 0.55rem;
+  border: 1px solid rgba(94, 200, 255, 0.25);
+  border-radius: 8px;
+  background: rgba(12, 28, 36, 0.55);
+  color: #b8dce8;
+  font-variant-numeric: tabular-nums;
+}
+
+.dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  background: #55604a;
+}
+
+.dot.live {
+  background: #7dce6a;
+  box-shadow: 0 0 0 3px rgba(125, 206, 106, 0.18);
+}
+
+.map-wrap {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+}
+
+.map-wrap:active {
+  cursor: grabbing;
+}
+
+.map-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.map-hint {
+  position: absolute;
+  left: 0.75rem;
+  bottom: 0.6rem;
+  margin: 0;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.7rem;
+  color: #8fa07a;
+  background: rgba(8, 12, 8, 0.55);
+  border-radius: 6px;
+  pointer-events: none;
+}
+
+.footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  padding: 0.45rem 1rem;
+  font-size: 0.7rem;
+  color: #8fa07a;
+  border-top: 1px solid rgba(180, 210, 150, 0.1);
+}
+
+.footer .muted {
+  opacity: 0.75;
+  max-width: 55ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

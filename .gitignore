@@ -1,0 +1,15 @@
+﻿node_modules/
+dist/
+*.log
+.DS_Store
+Thumbs.db
+.env
+.env.*
+
+companion/dist/
+companion/node_modules/
+
+data/*.raw.json
+
+# Large map assets — see README (place manually in companion/public/maps/)
+companion/public/maps/
