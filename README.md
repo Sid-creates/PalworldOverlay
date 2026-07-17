@@ -185,6 +185,12 @@ If names show as `Player 1` / `Player 2`, the game didn't expose a nick on that 
 - Actor class names can change after Palworld patches; the Lua scanner may need updates.
 - Dedicated-server hosts without a local client pawn may not see remote players until they are replicated to your client.
 
+If maps aren't lining up with landmarks, that's usually map-art vs world coords — seed positions still match live player coords when you're standing on an effigy.
+
+## Performance
+
+The UE4SS bridge polls slowly on purpose (players ~2s, relic scan ~5s) and only writes nearby relics to `live.json`. A previous wide `FindAllOf("Actor")` scan was removed because it hitch-crashed weaker PCs (`GameThread timed out waiting for RenderThread`).
+
 ## Repo layout
 
 ```text

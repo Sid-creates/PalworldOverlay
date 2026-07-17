@@ -141,7 +141,7 @@ export function startLiveWatcher({ onMessage, onStatus }) {
     // fall through to polling
   }
 
-  const poll = setInterval(readOnce, 400)
+  const poll = setInterval(readOnce, 1000)
   readOnce()
   emitStatus()
 

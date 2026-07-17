@@ -8,8 +8,12 @@
     - Disappearance of a nearby previously-seen relic (pickup)
 ]]
 
-local PLAYER_INTERVAL_MS = 750
-local SCAN_INTERVAL_MS = 2000
+local PLAYER_INTERVAL_MS = 2000
+local SCAN_INTERVAL_MS = 5000
+-- Only keep loaded relics near a player in live.json (cm). Cuts write size a lot.
+local PRESENT_NEAR_CM = 120000
+local PRESENT_MAX = 64
+local lastFlushBody = nil
 
 local lastWarn = 0
 local outPath = nil
@@ -180,7 +184,7 @@ local function flush()
     end
 
     local body = string.format(
-        '{"version":3,"bridgeRev":"0.3.2","updatedAt":%d,"player":%s,"players":[%s],"playerCount":%d,"relicPossessNum":%s,"present":[%s],"collected":[%s]}',
+        '{"version":3,"bridgeRev":"0.4.0","updatedAt":%d,"player":%s,"players":[%s],"playerCount":%d,"relicPossessNum":%s,"present":[%s],"collected":[%s]}',
         os.time(),
         playerJson,
         table.concat(playersParts, ","),
@@ -191,12 +195,17 @@ local function flush()
     )
 
     local ok, err = pcall(function()
+        -- Skip identical writes to cut disk churn.
+        if body == lastFlushBody then
+            return
+        end
         local f = io.open(path, "w")
         if not f then
             error("open failed: " .. path)
         end
         f:write(body)
         f:close()
+        lastFlushBody = body
     end)
 
     if not ok then
@@ -871,7 +880,13 @@ local function gatherRelicActors()
     local seen = {}
 
     local function addActor(actor)
-        if not actor or not actor:IsValid() then
+        if not actor then
+            return
+        end
+        local okValid, valid = pcall(function()
+            return actor:IsValid()
+        end)
+        if not okValid or not valid then
             return
         end
         local ok, addr = pcall(function()
@@ -887,30 +902,31 @@ local function gatherRelicActors()
         end
     end
 
+    -- Class-name scans only. Never FindAllOf("Actor") — that freezes weaker PCs.
     for _, className in ipairs(RELIC_CLASS_CANDIDATES) do
         local ok, list = pcall(function()
             return FindAllOf(className)
         end)
         if ok and list ~= nil then
-            for _, actor in pairs(list) do
-                addActor(actor)
-            end
-        end
-    end
-
-    -- Fallback wide scan if class names shifted this patch.
-    if #found == 0 then
-        local ok, actors = pcall(function()
-            return FindAllOf("Actor")
-        end)
-        if ok and actors ~= nil then
-            for _, actor in pairs(actors) do
-                addActor(actor)
-            end
+            forEachCollection(list, addActor)
         end
     end
 
     return found
+end
+
+local function nearAnyPlayer(x, y)
+    local max2 = PRESENT_NEAR_CM * PRESENT_NEAR_CM
+    for i = 1, #latestPlayers do
+        local p = latestPlayers[i]
+        local dx = p.x - x
+        local dy = p.y - y
+        if (dx * dx + dy * dy) <= max2 then
+            return true
+        end
+    end
+    -- If we have no player yet, keep a small global sample so companion still sees something.
+    return #latestPlayers == 0
 end
 
 local function scanRelics()
@@ -921,15 +937,20 @@ local function scanRelics()
         local x, y, z = getActorLocation(actor)
         if x ~= nil then
             local picked = actorIsPicked(actor)
-            present[#present + 1] = {
-                x = x,
-                y = y,
-                z = z or 0,
-                picked = picked,
-            }
+            if picked or nearAnyPlayer(x, y) then
+                present[#present + 1] = {
+                    x = x,
+                    y = y,
+                    z = z or 0,
+                    picked = picked,
+                }
+            end
             if picked then
                 markCollected(x, y, z or 0)
             end
+        end
+        if #present >= PRESENT_MAX then
+            break
         end
     end
 
