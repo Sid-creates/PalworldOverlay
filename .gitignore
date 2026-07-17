@@ -18,3 +18,8 @@ companion/public/maps/
 crash/*
 !crash/README.md
 
+# Karpathy autoresearch runtime artifacts
+autoresearch/results.tsv
+autoresearch/run.log
+autoresearch/test.log
+
