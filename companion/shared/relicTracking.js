@@ -9,7 +9,7 @@ export const STICKY_DROP_CM = 180_000
 export const DISAPPEAR_CONFIRM_CM = 45_000
 export const PRESENT_MAX = 48
 export const MATCH_MAX_CM = 12_000
-export const POSSESS_PICK_MAX_CM = 25_000
+export const POSSESS_PICK_MAX_CM = 12_000
 
 /** @param {number} n */
 export function isFiniteNumber(n) {
