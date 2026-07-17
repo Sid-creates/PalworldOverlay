@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { coordKey } from '../shared/relicTracking.js'
 
 /**
  * Watch the UE4SS bridge live.json and emit structured bridge messages.
@@ -95,7 +96,7 @@ export function startLiveWatcher({ onMessage, onStatus }) {
         // Memory flag on loaded actors: already picked in this save.
         for (const item of data.present) {
           if (!item || typeof item.x !== 'number' || !item.picked) continue
-          const key = `${Math.round(item.x / 200)}:${Math.round(item.y / 200)}:${Math.round((item.z ?? 0) / 200)}`
+          const key = coordKey(item.x, item.y, item.z ?? 0)
           if (emittedCollected.has(key)) continue
           emittedCollected.add(key)
           onMessage({
@@ -111,7 +112,7 @@ export function startLiveWatcher({ onMessage, onStatus }) {
       if (Array.isArray(data.collected)) {
         for (const item of data.collected) {
           if (!item || typeof item.x !== 'number') continue
-          const key = `${Math.round(item.x / 200)}:${Math.round(item.y / 200)}:${Math.round((item.z ?? 0) / 200)}`
+          const key = coordKey(item.x, item.y, item.z ?? 0)
           if (emittedCollected.has(key)) continue
           emittedCollected.add(key)
           onMessage({

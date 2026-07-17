@@ -1,0 +1,19 @@
+/** Re-export shared tracking helpers for the React app. */
+export {
+  COORD_BUCKET_CM,
+  DISAPPEAR_CONFIRM_CM,
+  MATCH_MAX_CM,
+  POSSESS_PICK_MAX_CM,
+  PRESENT_MAX,
+  PRESENT_NEAR_CM,
+  STICKY_DROP_CM,
+  anyPlayerNear,
+  coordKey,
+  detectDisappearedCollected,
+  findNearestMarkerId,
+  inferPickupFromPossessCount,
+  isValidWorldLocation,
+  nextScanIntervalMs,
+  selectPresent,
+  updateWatched,
+} from '../../shared/relicTracking.js'

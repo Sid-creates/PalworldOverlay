@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { findNearestMarkerId, projectWorld, worldToMap } from '../coords'
+import { inferPickupFromPossessCount } from '../lib/relicTracking'
 import type {
   BridgeMessage,
   BridgeStatus,
@@ -87,10 +88,39 @@ export function useBridge({ markers, progress, setCollected }: Options) {
   const markersRef = useRef(markers)
   const progressRef = useRef(progress)
   const setCollectedRef = useRef(setCollected)
+  const possessCountRef = useRef<number | null>(null)
+  const playersRef = useRef<PlayerPos[]>([])
+  const trackedPlayerIdRef = useRef(trackedPlayerId)
 
   markersRef.current = markers
   progressRef.current = progress
   setCollectedRef.current = setCollected
+  trackedPlayerIdRef.current = trackedPlayerId
+
+  function applyPossessCount(count: number, playersSnapshot?: PlayerPos[]) {
+    const prev = possessCountRef.current
+    possessCountRef.current = count
+    setRelicPossessNum(count)
+
+    const list = playersSnapshot ?? playersRef.current
+    const trackedId = trackedPlayerIdRef.current
+    const tracked =
+      (trackedId && list.find((p) => p.id === trackedId || p.name === trackedId)) ||
+      list.find((p) => p.isLocal) ||
+      list[0] ||
+      null
+
+    const id = inferPickupFromPossessCount(
+      prev,
+      count,
+      markersRef.current,
+      progressRef.current,
+      tracked,
+    )
+    if (id) {
+      void setCollectedRef.current(id, true, 'auto')
+    }
+  }
 
   const setTrackedPlayerId = (id: string | null) => {
     setTrackedPlayerIdState(id)
@@ -117,11 +147,12 @@ export function useBridge({ markers, progress, setCollected }: Options) {
             if (pos) next.push(pos)
           }
         }
+        playersRef.current = next
         setPlayers(next)
         const local = next.find((p) => p.isLocal)
         const preferred = local ?? next[0]
         if (preferred?.relicPossessNum != null) {
-          setRelicPossessNum(preferred.relicPossessNum)
+          applyPossessCount(preferred.relicPossessNum, next)
         }
         return
       }
@@ -165,7 +196,7 @@ export function useBridge({ markers, progress, setCollected }: Options) {
       }
       if (type === 'relic_possess_num') {
         const count = Number(msg.count)
-        if (Number.isFinite(count)) setRelicPossessNum(count)
+        if (Number.isFinite(count)) applyPossessCount(count)
         return
       }
     }
@@ -210,7 +241,7 @@ export function useBridge({ markers, progress, setCollected }: Options) {
 
   useEffect(() => {
     if (player?.relicPossessNum != null) {
-      setRelicPossessNum(player.relicPossessNum)
+      applyPossessCount(player.relicPossessNum)
     }
   }, [player?.id, player?.relicPossessNum])
 

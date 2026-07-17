@@ -189,7 +189,15 @@ If maps aren't lining up with landmarks, that's usually map-art vs world coords 
 
 ## Performance
 
-The UE4SS bridge polls slowly on purpose (players ~2s, relic scan ~5s) and only writes nearby relics to `live.json`. A previous wide `FindAllOf("Actor")` scan was removed because it hitch-crashed weaker PCs (`GameThread timed out waiting for RenderThread`).
+The UE4SS bridge is deliberately light:
+
+- Players ~every 2s
+- Relic scan adaptive: ~1.5s while standing near a watched effigy, ~5s otherwise
+- Class-name `FindAllOf` only (never `FindAllOf("Actor")` — that hitch-crashed weaker PCs)
+- Present list sorted by distance + capped; sticky watch for pickup disappearance
+- Identical `live.json` bodies are skipped (ignores `updatedAt`)
+
+Pickup reliability uses three signals: actor picked flags, sticky disappearance while nearby, and `relicPossessNum` bumps (bridge + companion).
 
 ## Repo layout
 

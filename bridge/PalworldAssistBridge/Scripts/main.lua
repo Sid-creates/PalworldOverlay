@@ -5,27 +5,46 @@
 
   Collected detection:
     - Actor property flags (bPickedInClient / bIsPicked / similar) on loaded relics
-    - Disappearance of a nearby previously-seen relic (pickup)
+    - Sticky watch + disappearance of a nearby previously-seen relic (pickup)
+    - RelicPossessNum increase near a watched relic
+
+  Perf (keep in sync with companion/shared/relicTracking.js):
+    - Class-name FindAllOf only (never FindAllOf("Actor"))
+    - Adaptive scan cadence (hot near watched relic, cold otherwise)
+    - Present list sorted by player distance + capped
+    - Skip unchanged live.json bodies (ignore updatedAt)
 ]]
 
-local PLAYER_INTERVAL_MS = 2000
-local SCAN_INTERVAL_MS = 5000
--- Only keep loaded relics near a player in live.json (cm). Cuts write size a lot.
+local BRIDGE_REV = "0.4.1"
+local TICK_MS = 500
+local PLAYER_EVERY_TICKS = 4 -- 2s
+local SCAN_HOT_TICKS = 3 -- 1.5s while standing on a watched relic
+local SCAN_COLD_TICKS = 10 -- 5s otherwise
 local PRESENT_NEAR_CM = 120000
-local PRESENT_MAX = 64
+local STICKY_DROP_CM = 180000
+local DISAPPEAR_CONFIRM_CM = 45000
+local PRESENT_MAX = 48
+local WATCH_MAX = 256
+local POSSESS_PICK_CM = 25000
+local HOT_NEAR_CM = 15000
+
 local lastFlushBody = nil
+local tickCount = 0
+local nextScanTick = 0
 
 local lastWarn = 0
 local outPath = nil
 local dirReady = false
 local seenCollected = {}
-local previousPresent = {}
+local watchedRelics = {}
 
 local latestPlayer = nil
 local latestPlayers = {}
 local latestPresent = {}
 local pendingCollected = {}
 local relicPossessNum = nil
+local previousPossessNum = nil
+local possessBumpPending = false
 
 local PICKED_PROPS = {
     "bPickedInClient",
@@ -34,6 +53,8 @@ local PICKED_PROPS = {
     "bObtained",
     "bAlreadyPicked",
     "PickedInClient",
+    "bCollected",
+    "bObtainedInClient",
 }
 
 local RELIC_CLASS_CANDIDATES = {
@@ -183,9 +204,9 @@ local function flush()
         possessJson = tostring(relicPossessNum)
     end
 
-    local body = string.format(
-        '{"version":3,"bridgeRev":"0.4.0","updatedAt":%d,"player":%s,"players":[%s],"playerCount":%d,"relicPossessNum":%s,"present":[%s],"collected":[%s]}',
-        os.time(),
+    local content = string.format(
+        '{"version":3,"bridgeRev":"%s","player":%s,"players":[%s],"playerCount":%d,"relicPossessNum":%s,"present":[%s],"collected":[%s]}',
+        BRIDGE_REV,
         playerJson,
         table.concat(playersParts, ","),
         #latestPlayers,
@@ -195,17 +216,28 @@ local function flush()
     )
 
     local ok, err = pcall(function()
-        -- Skip identical writes to cut disk churn.
-        if body == lastFlushBody then
+        -- Skip identical writes to cut disk churn (ignore updatedAt).
+        if content == lastFlushBody then
             return
         end
+        local body = string.format(
+            '{"version":3,"bridgeRev":"%s","updatedAt":%d,"player":%s,"players":[%s],"playerCount":%d,"relicPossessNum":%s,"present":[%s],"collected":[%s]}',
+            BRIDGE_REV,
+            os.time(),
+            playerJson,
+            table.concat(playersParts, ","),
+            #latestPlayers,
+            possessJson,
+            table.concat(presentParts, ","),
+            table.concat(collectedParts, ",")
+        )
         local f = io.open(path, "w")
         if not f then
             error("open failed: " .. path)
         end
         f:write(body)
         f:close()
-        lastFlushBody = body
+        lastFlushBody = content
     end)
 
     if not ok then
@@ -800,19 +832,6 @@ local function pickPrimaryPlayer(players)
     return players[1]
 end
 
-local function anyPlayerNear(x, y, maxDist)
-    local max2 = maxDist * maxDist
-    for i = 1, #latestPlayers do
-        local p = latestPlayers[i]
-        local dx = p.x - x
-        local dy = p.y - y
-        if (dx * dx + dy * dy) < max2 then
-            return true
-        end
-    end
-    return false
-end
-
 local function actorLooksLikeRelic(actor)
     if not actor or not actor:IsValid() then
         return false
@@ -856,6 +875,12 @@ local function actorIsPicked(actor)
         function()
             return actor.Stage.bPickedInClient
         end,
+        function()
+            return actor.Model.bIsPicked
+        end,
+        function()
+            return actor.MapObjectModel.bIsPicked
+        end,
     }
     for _, fn in ipairs(nested) do
         local ok, val = pcall(fn)
@@ -866,13 +891,44 @@ local function actorIsPicked(actor)
     return false
 end
 
+local function isValidWorldLocation(x, y, z)
+    if type(x) ~= "number" or type(y) ~= "number" then
+        return false
+    end
+    z = z or 0
+    if type(z) ~= "number" then
+        return false
+    end
+    if math.abs(x) < 50 and math.abs(y) < 50 then
+        return false
+    end
+    return true
+end
+
 local function markCollected(x, y, z)
+    if not isValidWorldLocation(x, y, z) then
+        return
+    end
     local key = roundKey(x, y, z)
     if seenCollected[key] then
         return
     end
     seenCollected[key] = true
     pendingCollected[#pendingCollected + 1] = { x = x, y = y, z = z or 0 }
+end
+
+local function minDist2ToPlayers(x, y)
+    local best = nil
+    for i = 1, #latestPlayers do
+        local p = latestPlayers[i]
+        local dx = p.x - x
+        local dy = p.y - y
+        local d2 = dx * dx + dy * dy
+        if best == nil or d2 < best then
+            best = d2
+        end
+    end
+    return best
 end
 
 local function gatherRelicActors()
@@ -915,46 +971,185 @@ local function gatherRelicActors()
     return found
 end
 
-local function nearAnyPlayer(x, y)
-    local max2 = PRESENT_NEAR_CM * PRESENT_NEAR_CM
-    for i = 1, #latestPlayers do
-        local p = latestPlayers[i]
-        local dx = p.x - x
-        local dy = p.y - y
-        if (dx * dx + dy * dy) <= max2 then
-            return true
-        end
-    end
-    -- If we have no player yet, keep a small global sample so companion still sees something.
-    return #latestPlayers == 0
-end
-
-local function scanRelics()
-    local present = {}
+local function sampleRelics()
+    local samples = {}
     local actors = gatherRelicActors()
 
     for _, actor in ipairs(actors) do
         local x, y, z = getActorLocation(actor)
-        if x ~= nil then
-            local picked = actorIsPicked(actor)
-            if picked or nearAnyPlayer(x, y) then
-                present[#present + 1] = {
-                    x = x,
-                    y = y,
-                    z = z or 0,
-                    picked = picked,
-                }
-            end
-            if picked then
-                markCollected(x, y, z or 0)
-            end
-        end
-        if #present >= PRESENT_MAX then
-            break
+        if isValidWorldLocation(x, y, z) then
+            samples[#samples + 1] = {
+                x = x,
+                y = y,
+                z = z or 0,
+                picked = actorIsPicked(actor),
+            }
         end
     end
 
+    return samples
+end
+
+local function updateWatched(samples)
+    local near2 = PRESENT_NEAR_CM * PRESENT_NEAR_CM
+    local drop2 = STICKY_DROP_CM * STICKY_DROP_CM
+
+    for i = 1, #samples do
+        local s = samples[i]
+        local d2 = minDist2ToPlayers(s.x, s.y)
+        if s.picked or d2 == nil or d2 <= near2 then
+            local key = roundKey(s.x, s.y, s.z)
+            watchedRelics[key] = { x = s.x, y = s.y, z = s.z }
+        end
+    end
+
+    for key, it in pairs(watchedRelics) do
+        local d2 = minDist2ToPlayers(it.x, it.y)
+        if d2 ~= nil and d2 > drop2 then
+            watchedRelics[key] = nil
+        end
+    end
+
+    local keys = {}
+    for key, _ in pairs(watchedRelics) do
+        keys[#keys + 1] = key
+    end
+    if #keys > WATCH_MAX then
+        table.sort(keys, function(a, b)
+            local da = minDist2ToPlayers(watchedRelics[a].x, watchedRelics[a].y) or 0
+            local db = minDist2ToPlayers(watchedRelics[b].x, watchedRelics[b].y) or 0
+            return da > db
+        end)
+        for i = 1, #keys - WATCH_MAX do
+            watchedRelics[keys[i]] = nil
+        end
+    end
+end
+
+local function detectDisappeared(samples)
+    local currentKeys = {}
+    for i = 1, #samples do
+        local s = samples[i]
+        currentKeys[roundKey(s.x, s.y, s.z)] = true
+    end
+
+    local confirm2 = DISAPPEAR_CONFIRM_CM * DISAPPEAR_CONFIRM_CM
+    for key, it in pairs(watchedRelics) do
+        if currentKeys[key] == nil and seenCollected[key] == nil then
+            local d2 = minDist2ToPlayers(it.x, it.y)
+            if d2 ~= nil and d2 <= confirm2 then
+                markCollected(it.x, it.y, it.z)
+            end
+        end
+    end
+end
+
+local function selectPresent(samples)
+    local near2 = PRESENT_NEAR_CM * PRESENT_NEAR_CM
+    local noPlayers = #latestPlayers == 0
+    local scored = {}
+
+    for i = 1, #samples do
+        local s = samples[i]
+        local d2 = minDist2ToPlayers(s.x, s.y)
+        if s.picked or noPlayers or d2 == nil or d2 <= near2 then
+            scored[#scored + 1] = {
+                x = s.x,
+                y = s.y,
+                z = s.z,
+                picked = s.picked,
+                dist2 = s.picked and -1 or (d2 or 0),
+            }
+        end
+    end
+
+    table.sort(scored, function(a, b)
+        return a.dist2 < b.dist2
+    end)
+
+    local present = {}
+    local seen = {}
+    for i = 1, #scored do
+        local s = scored[i]
+        local key = roundKey(s.x, s.y, s.z)
+        if not seen[key] then
+            seen[key] = true
+            present[#present + 1] = {
+                x = s.x,
+                y = s.y,
+                z = s.z,
+                picked = s.picked,
+            }
+            if s.picked then
+                markCollected(s.x, s.y, s.z)
+            end
+            if #present >= PRESENT_MAX then
+                break
+            end
+        end
+    end
     return present
+end
+
+local function playerStandingOnWatched()
+    local hot2 = HOT_NEAR_CM * HOT_NEAR_CM
+    for key, it in pairs(watchedRelics) do
+        if seenCollected[key] == nil then
+            local d2 = minDist2ToPlayers(it.x, it.y)
+            if d2 ~= nil and d2 <= hot2 then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+local function markNearestWatchedForPossessBump()
+    if not possessBumpPending then
+        return false
+    end
+    if previousPossessNum == nil or relicPossessNum == nil then
+        return false
+    end
+    if relicPossessNum <= previousPossessNum then
+        possessBumpPending = false
+        return false
+    end
+
+    local anchor = latestPlayer
+    if not anchor then
+        for i = 1, #latestPlayers do
+            if latestPlayers[i].isLocal then
+                anchor = latestPlayers[i]
+                break
+            end
+        end
+        anchor = anchor or latestPlayers[1]
+    end
+    if not anchor then
+        return false
+    end
+
+    local max2 = POSSESS_PICK_CM * POSSESS_PICK_CM
+    local best = nil
+    local best2 = max2
+    for key, it in pairs(watchedRelics) do
+        if seenCollected[key] == nil then
+            local dx = anchor.x - it.x
+            local dy = anchor.y - it.y
+            local d2 = dx * dx + dy * dy
+            if d2 <= best2 then
+                best2 = d2
+                best = it
+            end
+        end
+    end
+    if best then
+        markCollected(best.x, best.y, best.z)
+        possessBumpPending = false
+        return true
+    end
+    return false
 end
 
 local function tickPlayer()
@@ -962,69 +1157,68 @@ local function tickPlayer()
     latestPlayers = players
     latestPlayer = pickPrimaryPlayer(players)
 
+    local possess = nil
     if latestPlayer and latestPlayer.relicPossessNum ~= nil then
-        relicPossessNum = latestPlayer.relicPossessNum
+        possess = latestPlayer.relicPossessNum
     elseif #players > 0 then
         for i = 1, #players do
             if players[i].relicPossessNum ~= nil then
-                relicPossessNum = players[i].relicPossessNum
+                possess = players[i].relicPossessNum
                 break
             end
         end
+    end
+
+    if possess ~= nil then
+        if relicPossessNum ~= nil and possess > relicPossessNum then
+            possessBumpPending = true
+        end
+        previousPossessNum = relicPossessNum
+        relicPossessNum = possess
+        markNearestWatchedForPossessBump()
     end
 
     flush()
 end
 
 local function tickScan()
-    local present = scanRelics()
-    latestPresent = present
-
-    local currentKeys = {}
-    for i = 1, #present do
-        local it = present[i]
-        currentKeys[roundKey(it.x, it.y, it.z)] = it
-        if it.picked then
-            markCollected(it.x, it.y, it.z)
-        end
-    end
-
-    -- Nearby disappearance ⇒ collected (any nearby player on the server).
-    for key, it in pairs(previousPresent) do
-        if currentKeys[key] == nil and seenCollected[key] == nil then
-            if anyPlayerNear(it.x, it.y, 30000) then
-                markCollected(it.x, it.y, it.z)
-            end
-        end
-    end
-
-    previousPresent = currentKeys
+    local samples = sampleRelics()
+    updateWatched(samples)
+    detectDisappeared(samples)
+    latestPresent = selectPresent(samples)
+    markNearestWatchedForPossessBump()
     flush()
 end
 
 log("starting → " .. resolveOutPath() .. " (no console spawn; companion must create the folder)")
 flush()
 
-LoopAsync(PLAYER_INTERVAL_MS, function()
-    local ok, err = pcall(tickPlayer)
-    if not ok then
-        local now = os.time()
-        if now - lastWarn > 15 then
-            log("player tick error: " .. tostring(err))
-            lastWarn = now
-        end
-    end
-    return false
-end)
+LoopAsync(TICK_MS, function()
+    tickCount = tickCount + 1
 
-LoopAsync(SCAN_INTERVAL_MS, function()
-    local ok, err = pcall(tickScan)
-    if not ok then
-        local now = os.time()
-        if now - lastWarn > 15 then
-            log("scan tick error: " .. tostring(err))
-            lastWarn = now
+    if tickCount % PLAYER_EVERY_TICKS == 0 then
+        local ok, err = pcall(tickPlayer)
+        if not ok then
+            local now = os.time()
+            if now - lastWarn > 15 then
+                log("player tick error: " .. tostring(err))
+                lastWarn = now
+            end
         end
     end
+
+    if tickCount >= nextScanTick then
+        local ok, err = pcall(tickScan)
+        if not ok then
+            local now = os.time()
+            if now - lastWarn > 15 then
+                log("scan tick error: " .. tostring(err))
+                lastWarn = now
+            end
+        end
+        local cadence = playerStandingOnWatched() and SCAN_HOT_TICKS or SCAN_COLD_TICKS
+        nextScanTick = tickCount + cadence
+    end
+
     return false
 end)

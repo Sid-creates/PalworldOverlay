@@ -113,7 +113,7 @@ export function findNearestMarkerId(
   markers: Array<{ id: string; x: number; y: number }>,
   x: number,
   y: number,
-  maxDist = 8000,
+  maxDist = 12_000,
 ): string | null {
   const max2 = maxDist * maxDist
   let bestId: string | null = null
