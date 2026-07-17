@@ -13,7 +13,7 @@ import {
 
 describe('coordKey + location validity', () => {
   it('buckets nearby jitter into the same key', () => {
-    expect(coordKey(1000, 2000, 300)).toBe(coordKey(1040, 1960, 320))
+    expect(coordKey(1000, 2000, 300)).toBe(coordKey(1040, 1960, 900))
   })
 
   it('rejects origin garbage locations', () => {

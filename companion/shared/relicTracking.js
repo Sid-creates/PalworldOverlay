@@ -10,6 +10,10 @@ export const DISAPPEAR_CONFIRM_CM = 45_000
 export const PRESENT_MAX = 48
 export const MATCH_MAX_CM = 12_000
 export const POSSESS_PICK_MAX_CM = 12_000
+/** If player still stands on a just-collected seed, don't possess-mark a neighbor. */
+export const POSSESS_ON_COLLECTED_CM = 5_000
+/** Treat a watched relic as still present if any sample is within this distance. */
+export const STILL_PRESENT_CM = 600
 
 /** @param {number} n */
 export function isFiniteNumber(n) {
@@ -23,7 +27,10 @@ export function isFiniteNumber(n) {
  * @param {number} [z]
  */
 export function coordKey(x, y, z = 0) {
-  return `${Math.round(x / COORD_BUCKET_CM)}:${Math.round(y / COORD_BUCKET_CM)}:${Math.round(z / COORD_BUCKET_CM)}`
+  // XY-only: Z jitter during combat/pickup anims was splitting the same effigy
+  // across buckets and causing false disappearance collects.
+  void z
+  return `${Math.round(x / COORD_BUCKET_CM)}:${Math.round(y / COORD_BUCKET_CM)}`
 }
 
 /**
@@ -194,17 +201,34 @@ export function detectDisappearedCollected(
   opts = {},
 ) {
   const confirmCm = opts.confirmCm ?? DISAPPEAR_CONFIRM_CM
+  const stillCm = opts.stillCm ?? STILL_PRESENT_CM
+  const still2 = stillCm * stillCm
+
+  /** @type {RelicSample[]} */
+  const validCurrent = []
   const currentKeys = new Set()
   for (const s of currentSamples) {
     if (!s || !isValidWorldLocation(s.x, s.y, s.z ?? 0)) continue
+    validCurrent.push(s)
     currentKeys.add(coordKey(s.x, s.y, s.z ?? 0))
   }
 
   /** @type {WatchedRelic[]} */
   const found = []
   for (const [key, it] of Object.entries(watched)) {
-    if (currentKeys.has(key)) continue
     if (hasCollected(alreadyCollected, key)) continue
+    if (currentKeys.has(key)) continue
+
+    // Spatial soft-match: jitter may change the bucket without a real despawn.
+    let stillHere = false
+    for (const s of validCurrent) {
+      if (dist2(s.x, s.y, it.x, it.y) <= still2) {
+        stillHere = true
+        break
+      }
+    }
+    if (stillHere) continue
+
     if (!anyPlayerNear(players, it.x, it.y, confirmCm)) continue
     found.push({ x: it.x, y: it.y, z: it.z })
   }
@@ -250,7 +274,20 @@ export function inferPickupFromPossessCount(
   }
 
   const maxCm = opts.maxCm ?? POSSESS_PICK_MAX_CM
+  const onCollectedCm = opts.onCollectedCm ?? POSSESS_ON_COLLECTED_CM
   const max2 = maxCm * maxCm
+  const onCollected2 = onCollectedCm * onCollectedCm
+
+  // If we're still standing on a seed we already marked, the possess bump is
+  // accounted for — don't steal a nearby unmarked neighbor.
+  for (const m of markers) {
+    if (!m || !progress[m.id]?.collected) continue
+    if (!isFiniteNumber(m.x) || !isFiniteNumber(m.y)) continue
+    if (dist2(player.x, player.y, m.x, m.y) <= onCollected2) {
+      return null
+    }
+  }
+
   let bestId = null
   let best2 = max2
 
