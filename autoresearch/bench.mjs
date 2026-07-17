@@ -294,6 +294,84 @@ test('sim_no_false_collect_on_chunk_unload', () => {
   return { ok: gone.length === 0 }
 })
 
+test('combat_jitter_does_not_double_collect', () => {
+  const players = [{ x: 0, y: 0 }]
+  const watched = {}
+  const relic = { x: 5000, y: 0, z: 100 }
+  updateWatched(watched, [relic], players)
+  const frames = [
+    { x: 5000 + 180, y: 20, z: 250 },
+    { x: 5000 - 190, y: -30, z: -50 },
+    { x: 5000 + 40, y: 10, z: 120 },
+  ]
+  let falseGone = 0
+  for (const f of frames) {
+    const gone = detectDisappearedCollected(watched, [f], players, new Set())
+    if (gone.length) falseGone += 1
+    updateWatched(watched, [f], players)
+  }
+  return { ok: falseGone === 0 }
+})
+
+test('possess_does_not_steal_second_seed_after_disappear', () => {
+  const markers = [
+    { id: 'picked', x: 0, y: 0 },
+    { id: 'neighbor', x: 15_000, y: 0 },
+  ]
+  const progress = { picked: { collected: true } }
+  const id = inferPickupFromPossessCount(
+    4,
+    5,
+    markers,
+    progress,
+    { x: 200, y: 0 },
+    { maxCm: 20_000 },
+  )
+  // Standing on already-collected seed; neighbor at 15k must not be stolen.
+  return { ok: id === null }
+})
+
+test('watch_eviction_keeps_nearest_under_pressure', () => {
+  const watched = {}
+  const players = [{ x: 0, y: 0 }]
+  const samples = []
+  for (let i = 0; i < 40; i++) {
+    samples.push({ x: 1000 + i * 2000, y: 0, z: 0 })
+  }
+  updateWatched(watched, samples, players, {
+    nearCm: 200_000,
+    dropCm: 300_000,
+    watchMax: 8,
+  })
+  const keys = Object.keys(watched)
+  if (keys.length > 8) return { ok: false, detail: `size=${keys.length}` }
+  const nearestKey = coordKey(1000, 0, 0)
+  return { ok: Boolean(watched[nearestKey]), detail: keys.join(',') }
+})
+
+test('match_rejects_ambiguous_far_seed', () => {
+  const id = findNearestMarkerId(
+    [
+      { id: 'a', x: 0, y: 0 },
+      { id: 'b', x: 100_000, y: 0 },
+    ],
+    50_000,
+    0,
+    12_000,
+  )
+  return { ok: id === null }
+})
+
+test('cadence_stays_cold_for_already_collected_watch', () => {
+  const key = coordKey(0, 0, 0)
+  const ms = nextScanIntervalMs(
+    { [key]: { x: 0, y: 0, z: 0 } },
+    [{ x: 100, y: 0 }],
+    new Set([key]),
+  )
+  return { ok: ms >= 4000 }
+})
+
 function microbench() {
   const players = [{ x: 0, y: 0 }]
   const samples = []
@@ -325,6 +403,8 @@ function main() {
   let presentTotal = 0
   let possessHits = 0
   let possessTotal = 0
+  let cadenceHits = 0
+  let cadenceTotal = 0
 
   const pickupNames = new Set([
     'pickup_disappear_while_nearby',
@@ -337,15 +417,25 @@ function main() {
     'streaming_unload_far_from_confirm_radius_is_not_pickup',
     'sim_no_false_collect_on_chunk_unload',
     'pickup_survives_coord_jitter_same_bucket',
+    'combat_jitter_does_not_double_collect',
+    'possess_does_not_steal_second_seed_after_disappear',
+    'match_rejects_ambiguous_far_seed',
   ])
   const presentNames = new Set([
     'present_keeps_feet_effigy_under_cap_pressure',
     'present_filters_origin_garbage',
     'present_prefers_picked_flag',
+    'watch_eviction_keeps_nearest_under_pressure',
   ])
   const possessNames = new Set([
     'possess_marks_nearest_remaining',
     'possess_ignores_flat_count',
+    'possess_does_not_steal_second_seed_after_disappear',
+  ])
+  const cadenceNames = new Set([
+    'hot_scan_when_on_relic',
+    'cold_scan_when_away',
+    'cadence_stays_cold_for_already_collected_watch',
   ])
 
   for (const c of cases) {
@@ -367,11 +457,7 @@ function main() {
       else pickupFn += 1
     }
     if (fpNames.has(c.name)) {
-      if (ok) {
-        // passed means we correctly avoided a false positive
-      } else {
-        pickupFp += 1
-      }
+      if (!ok) pickupFp += 1
     }
     if (presentNames.has(c.name)) {
       presentTotal += 1
@@ -380,6 +466,10 @@ function main() {
     if (possessNames.has(c.name)) {
       possessTotal += 1
       if (ok) possessHits += 1
+    }
+    if (cadenceNames.has(c.name)) {
+      cadenceTotal += 1
+      if (ok) cadenceHits += 1
     }
   }
 
@@ -391,19 +481,19 @@ function main() {
     precision + recall === 0 ? 0 : (2 * precision * recall) / (precision + recall)
   const presentHit = presentTotal === 0 ? 0 : presentHits / presentTotal
   const possessHit = possessTotal === 0 ? 0 : possessHits / possessTotal
+  const cadenceHit = cadenceTotal === 0 ? 0 : cadenceHits / cadenceTotal
   const falsePosRate = fpNames.size === 0 ? 0 : pickupFp / fpNames.size
   const caseRate = pass / cases.length
 
   const benchMs = microbench()
-  // Soft speed term: ~100ms baseline → ~1.0; slower hurts gently.
   const speedTerm = clamp01(120 / Math.max(benchMs, 1))
 
-  // Primary objective: correctness. Speed is a light tie-breaker.
   const score =
-    0.42 * pickupF1 +
+    0.36 * pickupF1 +
     0.18 * (1 - falsePosRate) +
-    0.16 * presentHit +
+    0.14 * presentHit +
     0.12 * possessHit +
+    0.08 * cadenceHit +
     0.08 * caseRate +
     0.04 * speedTerm
 
@@ -412,6 +502,7 @@ function main() {
   console.log(`pickup_f1:        ${pickupF1.toFixed(6)}`)
   console.log(`present_hit:      ${presentHit.toFixed(6)}`)
   console.log(`possess_hit:      ${possessHit.toFixed(6)}`)
+  console.log(`cadence_hit:      ${cadenceHit.toFixed(6)}`)
   console.log(`false_pos:        ${falsePosRate.toFixed(6)}`)
   console.log(`bench_ms:         ${benchMs.toFixed(1)}`)
   console.log(`cases_pass:       ${pass}`)
