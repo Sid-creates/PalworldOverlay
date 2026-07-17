@@ -22,14 +22,44 @@ Progress is stored locally on your machine.
 
 ## Installation
 
-### 1. Clone the repo
+### Easy install (recommended)
+
+From the repo root, double-click **`install.bat`** or run:
+
+```powershell
+.\install.ps1
+```
+
+The installer will:
+
+1. Download map textures into `companion/public/maps/`
+2. Run `npm install` for the companion app
+3. Auto-detect your Palworld `Win64` folder (Steam libraries + common paths)
+4. Install UE4SS if missing (optional prompt)
+5. Copy and enable the `PalworldAssistBridge` mod in `Mods\mods.txt`
+6. Create `%LOCALAPPDATA%\PalworldAssist\`
+7. Create **`start-overlay.bat`** to launch the overlay
+
+Options:
+
+```powershell
+.\install.ps1 -PalworldPath "D:\SteamLibrary\steamapps\common\Palworld"
+.\install.ps1 -Launch          # install, then start the overlay
+.\install.ps1 -SkipUe4ss       # skip UE4SS download (you already have it)
+```
+
+After install, run **`start-overlay.bat`**, then fully restart Palworld.
+
+### Manual install
+
+#### 1. Clone the repo
 
 ```powershell
 git clone https://github.com/Sid-creates/PalworldOverlay.git
 cd PalworldOverlay
 ```
 
-### 2. Map textures
+#### 2. Map textures
 
 Place the two map images in `companion/public/maps/`:
 
@@ -41,7 +71,7 @@ companion/public/maps/
 
 These are not bundled in the repo (large game assets). Community ports used by projects like [palworld-save-pal](https://github.com/oMaN-Rod/palworld-save-pal) and palworld-server-manager work with this coordinate system. See `data/ATTRIBUTION.txt`.
 
-### 3. Companion app
+#### 3. Companion app
 
 ```powershell
 cd companion
@@ -66,7 +96,7 @@ On first launch the app creates:
 
 **Start the companion before launching Palworld** so that folder exists before the mod runs.
 
-### 4. UE4SS + bridge mod
+#### 4. UE4SS + bridge mod
 
 1. Install [UE4SS](https://github.com/UE4SS-RE/RE-UE4SS/releases) into your Palworld binaries folder:
 
@@ -144,6 +174,8 @@ Close the window to hide to tray; quit from the tray menu.
 
 ```text
 PalworldOverlay/
+├── install.ps1 / install.bat      # one-shot setup
+├── start-overlay.bat              # launch companion (created by installer)
 ├── bridge/PalworldAssistBridge/   # UE4SS Lua mod
 ├── companion/                     # Electron + React map overlay
 │   ├── electron/                  # main process, live.json watcher
