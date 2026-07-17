@@ -13,3 +13,8 @@ data/*.raw.json
 
 # Large map assets — see README (place manually in companion/public/maps/)
 companion/public/maps/
+
+# Local crash bundles from collect-crash.bat (dumps are huge)
+crash/*
+!crash/README.md
+

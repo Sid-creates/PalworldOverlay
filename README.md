@@ -55,6 +55,10 @@ Options:
 
 After install, run **`start-overlay.bat`**, then fully restart Palworld.
 
+### After a crash
+
+Double-click **`collect-crash.bat`**. It gathers UE4SS dumps, `UE4SS.log`, Unreal CrashContext, and the bridge mod into `crash\<timestamp>\` and builds a `.zip` you can send for debugging.
+
 ### Manual install
 
 #### 1. Clone the repo
