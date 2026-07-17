@@ -8,8 +8,8 @@
     - Disappearance of a nearby previously-seen relic (pickup)
 ]]
 
-local PLAYER_INTERVAL_MS = 300
-local SCAN_INTERVAL_MS = 1500
+local PLAYER_INTERVAL_MS = 750
+local SCAN_INTERVAL_MS = 2000
 
 local lastWarn = 0
 local outPath = nil
@@ -18,6 +18,7 @@ local seenCollected = {}
 local previousPresent = {}
 
 local latestPlayer = nil
+local latestPlayers = {}
 local latestPresent = {}
 local pendingCollected = {}
 local relicPossessNum = nil
@@ -82,6 +83,19 @@ local function jsonNumber(n)
     return string.format("%.3f", n)
 end
 
+local function jsonString(s)
+    if s == nil then
+        return '""'
+    end
+    local t = tostring(s)
+    t = t:gsub("\\", "\\\\")
+    t = t:gsub('"', '\\"')
+    t = t:gsub("\n", "\\n")
+    t = t:gsub("\r", "\\r")
+    t = t:gsub("\t", "\\t")
+    return '"' .. t .. '"'
+end
+
 local function flush()
     local path = resolveOutPath()
     if not dirReady then
@@ -128,13 +142,35 @@ local function flush()
         )
     end
 
+    local playersParts = {}
+    for i = 1, #latestPlayers do
+        local p = latestPlayers[i]
+        local possess = "null"
+        if p.relicPossessNum ~= nil then
+            possess = tostring(p.relicPossessNum)
+        end
+        playersParts[#playersParts + 1] = string.format(
+            '{"id":%s,"name":%s,"x":%s,"y":%s,"z":%s,"local":%s,"relicPossessNum":%s}',
+            jsonString(p.id),
+            jsonString(p.name),
+            jsonNumber(p.x),
+            jsonNumber(p.y),
+            jsonNumber(p.z),
+            p.isLocal and "true" or "false",
+            possess
+        )
+    end
+
     local playerJson = "null"
     if latestPlayer then
         playerJson = string.format(
-            '{"x":%s,"y":%s,"z":%s}',
+            '{"id":%s,"name":%s,"x":%s,"y":%s,"z":%s,"local":%s}',
+            jsonString(latestPlayer.id or ""),
+            jsonString(latestPlayer.name or ""),
             jsonNumber(latestPlayer.x),
             jsonNumber(latestPlayer.y),
-            jsonNumber(latestPlayer.z)
+            jsonNumber(latestPlayer.z),
+            latestPlayer.isLocal and "true" or "false"
         )
     end
 
@@ -144,9 +180,11 @@ local function flush()
     end
 
     local body = string.format(
-        '{"version":2,"updatedAt":%d,"player":%s,"relicPossessNum":%s,"present":[%s],"collected":[%s]}',
+        '{"version":3,"bridgeRev":"0.3.2","updatedAt":%d,"player":%s,"players":[%s],"playerCount":%d,"relicPossessNum":%s,"present":[%s],"collected":[%s]}',
         os.time(),
         playerJson,
+        table.concat(playersParts, ","),
+        #latestPlayers,
         possessJson,
         table.concat(presentParts, ","),
         table.concat(collectedParts, ",")
@@ -170,71 +208,600 @@ local function flush()
     end
 end
 
-local function getPlayerCharacter()
-    local player = FindFirstOf("PalPlayerCharacter")
-    if player and player:IsValid() then
-        return player
+local function isUselessName(name)
+    if not name or name == "" then
+        return true
+    end
+    local lower = string.lower(name)
+    return lower == "none"
+        or lower == "player"
+        or lower == "playername"
+        or lower == "default"
+        or lower:find("^player%s*%d*$") ~= nil
+        or lower:find("^userdata:") ~= nil
+end
+
+-- IMPORTANT: never call :ToString() / UFunctions on unknown userdata.
+-- pcall does NOT catch native EXCEPTION_ACCESS_VIOLATION from UE4SS.
+local function asLuaString(value)
+    if value == nil then
+        return nil
+    end
+    if type(value) == "string" then
+        if isUselessName(value) then
+            return nil
+        end
+        return value
     end
     return nil
 end
 
-local function getPlayerLocation()
-    local player = getPlayerCharacter()
-    if not player then
+local function readVec3(loc)
+    if not loc then
+        return nil
+    end
+    local ok, x, y, z = pcall(function()
+        return loc.X or loc.x, loc.Y or loc.y, loc.Z or loc.z
+    end)
+    if ok and type(x) == "number" and type(y) == "number" then
+        return x, y, z or 0
+    end
+    return nil
+end
+
+local function objectAddress(obj)
+    if not obj then
+        return nil
+    end
+    local okValid, valid = pcall(function()
+        return obj:IsValid()
+    end)
+    if not okValid or not valid then
+        return nil
+    end
+    local ok, addr = pcall(function()
+        return tostring(obj:GetAddress())
+    end)
+    if ok and type(addr) == "string" and addr ~= "" then
+        return addr
+    end
+    return nil
+end
+
+local function getActorLocation(actor)
+    if not actor then
+        return nil
+    end
+    local okValid, valid = pcall(function()
+        return actor:IsValid()
+    end)
+    if not okValid or not valid then
         return nil
     end
 
     local ok, loc = pcall(function()
-        return player:K2_GetActorLocation()
+        return actor:K2_GetActorLocation()
     end)
-    if ok and loc and loc.X ~= nil then
-        return loc.X, loc.Y, loc.Z
+    if ok then
+        local x, y, z = readVec3(loc)
+        if x ~= nil then
+            return x, y, z
+        end
     end
 
     ok, loc = pcall(function()
-        return player.RootComponent.RelativeLocation
+        local root = actor.RootComponent
+        if root and root:IsValid() then
+            return root.RelativeLocation
+        end
+        return nil
     end)
-    if ok and loc and loc.X ~= nil then
-        return loc.X, loc.Y, loc.Z
+    if ok then
+        return readVec3(loc)
     end
-
     return nil
 end
 
-local function readRelicPossessNum()
-    -- Best-effort: player state / parameter often exposes RelicPossessNum.
-    local candidates = {
-        function()
-            local state = FindFirstOf("PalPlayerState")
-            if state and state:IsValid() and state.RelicPossessNum ~= nil then
-                return state.RelicPossessNum
+-- Safe TArray / FindAllOf iteration: property index / pairs only.
+-- Do NOT call :Num() / :GetArrayNum() — those can AV on bad arrays.
+local function forEachCollection(arr, callback)
+    if arr == nil then
+        return
+    end
+
+    local okLen, n = pcall(function()
+        return #arr
+    end)
+    if okLen and type(n) == "number" and n > 0 and n < 256 then
+        for i = 1, n do
+            local okItem, item = pcall(function()
+                return arr[i]
+            end)
+            if okItem and item ~= nil then
+                callback(item)
             end
+        end
+        return
+    end
+
+    local okPairs = pcall(function()
+        for _, item in pairs(arr) do
+            if item ~= nil then
+                callback(item)
+            end
+        end
+    end)
+    if not okPairs then
+        return
+    end
+end
+
+local function collectOfClass(className, into)
+    local ok, list = pcall(function()
+        return FindAllOf(className)
+    end)
+    if not ok or list == nil then
+        return
+    end
+    forEachCollection(list, function(item)
+        into[#into + 1] = item
+    end)
+end
+
+local function guidFieldsToString(guid)
+    if guid == nil or type(guid) ~= "userdata" and type(guid) ~= "table" then
+        return nil
+    end
+    -- Property fields only — never guid:ToString() (crashes on FGuid).
+    local ok, a, b, c, d = pcall(function()
+        return guid.A, guid.B, guid.C, guid.D
+    end)
+    if not ok then
+        return nil
+    end
+    if type(a) ~= "number" or type(b) ~= "number" then
+        return nil
+    end
+    return string.format(
+        "%08X-%08X-%08X-%08X",
+        a or 0,
+        b or 0,
+        c or 0,
+        d or 0
+    )
+end
+
+local function readPlayerId(playerState, character)
+    -- Prefer cheap numeric / address ids. Avoid GetPlayerUId() UFunction.
+    if playerState then
+        local ok, playerId = pcall(function()
+            return playerState.PlayerId
+        end)
+        if ok and type(playerId) == "number" then
+            return "pid:" .. tostring(playerId)
+        end
+
+        local okUid, uid = pcall(function()
+            return playerState.PlayerUId
+        end)
+        if okUid and uid ~= nil then
+            local asGuid = guidFieldsToString(uid)
+            if asGuid then
+                return asGuid
+            end
+        end
+
+        local addr = objectAddress(playerState)
+        if addr then
+            return "state:" .. addr
+        end
+    end
+
+    local charAddr = objectAddress(character)
+    if charAddr then
+        return "char:" .. charAddr
+    end
+    return nil
+end
+
+local function tryFStringProperty(obj, propName)
+    if not obj then
+        return nil
+    end
+    local ok, value = pcall(function()
+        return obj[propName]
+    end)
+    if not ok or value == nil then
+        return nil
+    end
+
+    local asStr = asLuaString(value)
+    if asStr then
+        return asStr
+    end
+
+    -- Only call ToString on values that look like FString wrappers.
+    -- Skip if A/B/C/D exist (that's an FGuid — ToString AV'd in crash dumps).
+    if type(value) == "userdata" or type(value) == "table" then
+        local okGuid, maybeA = pcall(function()
+            return value.A
+        end)
+        if okGuid and type(maybeA) == "number" then
             return nil
-        end,
-        function()
-            local player = getPlayerCharacter()
-            if not player then
+        end
+        local okTs, s = pcall(function()
+            if value.ToString == nil then
                 return nil
             end
-            if player.RelicPossessNum ~= nil then
-                return player.RelicPossessNum
-            end
-            local ok, n = pcall(function()
-                return player.CharacterParameterComponent.IndividualParameter.SaveParameter.RelicPossessNum
-            end)
-            if ok then
-                return n
-            end
-            return nil
-        end,
-    }
-    for _, fn in ipairs(candidates) do
-        local ok, n = pcall(fn)
-        if ok and type(n) == "number" then
-            return n
+            return value:ToString()
+        end)
+        if okTs then
+            return asLuaString(s)
         end
     end
     return nil
+end
+
+local function readPlayerName(character, playerState)
+    if playerState then
+        local fromState = tryFStringProperty(playerState, "PlayerNamePrivate")
+            or tryFStringProperty(playerState, "PlayerName")
+            or tryFStringProperty(playerState, "NickName")
+            or tryFStringProperty(playerState, "PlayerNameNickName")
+        if fromState then
+            return fromState
+        end
+    end
+
+    if character then
+        local fromChar = tryFStringProperty(character, "NickName")
+        if fromChar then
+            return fromChar
+        end
+        local ok, nick = pcall(function()
+            return character.CharacterParameterComponent.IndividualParameter.SaveParameter.NickName
+        end)
+        if ok and nick ~= nil then
+            local asStr = asLuaString(nick)
+            if asStr then
+                return asStr
+            end
+            if type(nick) == "userdata" then
+                local okGuid, maybeA = pcall(function()
+                    return nick.A
+                end)
+                if not (okGuid and type(maybeA) == "number") then
+                    local okTs, s = pcall(function()
+                        if nick.ToString == nil then
+                            return nil
+                        end
+                        return nick:ToString()
+                    end)
+                    if okTs then
+                        return asLuaString(s)
+                    end
+                end
+            end
+        end
+    end
+    return nil
+end
+
+local function readRelicPossessNumFrom(character, playerState)
+    local ok, n = pcall(function()
+        if playerState and type(playerState.RelicPossessNum) == "number" then
+            return playerState.RelicPossessNum
+        end
+        if character and type(character.RelicPossessNum) == "number" then
+            return character.RelicPossessNum
+        end
+        if character then
+            return character.CharacterParameterComponent.IndividualParameter.SaveParameter.RelicPossessNum
+        end
+        return nil
+    end)
+    if ok and type(n) == "number" then
+        return n
+    end
+    return nil
+end
+
+local function getPawnFromState(playerState)
+    if not playerState then
+        return nil
+    end
+    -- Property reads only — avoid GetPawn() / GetPlayerController() UFunctions.
+    local props = { "PawnPrivate", "Pawn" }
+    for _, prop in ipairs(props) do
+        local ok, pawn = pcall(function()
+            return playerState[prop]
+        end)
+        if ok and pawn then
+            local okValid, valid = pcall(function()
+                return pawn:IsValid()
+            end)
+            if okValid and valid then
+                return pawn
+            end
+        end
+    end
+
+    local okOwner, owner = pcall(function()
+        return playerState.Owner
+    end)
+    if okOwner and owner then
+        local okValid, valid = pcall(function()
+            return owner:IsValid()
+        end)
+        if okValid and valid then
+            local okPawn, pawn = pcall(function()
+                return owner.Pawn or owner.AcknowledgedPawn
+            end)
+            if okPawn and pawn then
+                local okPv, pv = pcall(function()
+                    return pawn:IsValid()
+                end)
+                if okPv and pv then
+                    return pawn
+                end
+            end
+        end
+    end
+    return nil
+end
+
+local function getLocationFromState(playerState, character)
+    local pawn = character
+    if not pawn then
+        pawn = getPawnFromState(playerState)
+    end
+    if pawn then
+        local x, y, z = getActorLocation(pawn)
+        if x ~= nil then
+            return x, y, z, pawn
+        end
+    end
+
+    -- Property only — do not call GetCharacterLocation() (UFunction can AV).
+    if playerState then
+        local ok, loc = pcall(function()
+            return playerState.CachedPlayerLocation
+        end)
+        if ok then
+            local x, y, z = readVec3(loc)
+            if x ~= nil and not (x == 0 and y == 0 and z == 0) then
+                return x, y, z, pawn
+            end
+        end
+    end
+    return nil
+end
+
+local function isLocalPlayerState(playerState, character)
+    if character then
+        local ok, controlled = pcall(function()
+            return character:IsLocallyControlled()
+        end)
+        if ok and controlled == true then
+            return true
+        end
+    end
+
+    if playerState then
+        local okOwn, isLocal = pcall(function()
+            local owner = playerState.Owner
+            if not owner then
+                return false
+            end
+            if not owner:IsValid() then
+                return false
+            end
+            if owner.IsLocalPlayerController == nil then
+                return false
+            end
+            return owner:IsLocalPlayerController()
+        end)
+        if okOwn and isLocal == true then
+            return true
+        end
+    end
+
+    return false
+end
+
+local function getLocalPlayerState()
+    local controllers = {}
+    collectOfClass("PalPlayerController", controllers)
+    if #controllers == 0 then
+        collectOfClass("PlayerController", controllers)
+    end
+    for i = 1, #controllers do
+        local pc = controllers[i]
+        local ok, isLocal = pcall(function()
+            return pc and pc:IsValid() and pc:IsLocalPlayerController()
+        end)
+        if ok and isLocal then
+            local okPs, ps = pcall(function()
+                return pc.PlayerState
+            end)
+            if okPs and ps then
+                local okValid, valid = pcall(function()
+                    return ps:IsValid()
+                end)
+                if okValid and valid then
+                    return ps
+                end
+            end
+        end
+    end
+    return nil
+end
+
+local function gatherPlayerStates()
+    local states = {}
+    local seen = {}
+
+    local function addState(state)
+        local addr = objectAddress(state)
+        if not addr or seen[addr] then
+            return
+        end
+        seen[addr] = true
+        states[#states + 1] = state
+    end
+
+    -- Preferred: GameState.PlayerArray (all connected players).
+    local gameStateClasses = {
+        "PalGameStateInGame",
+        "PalGameState",
+        "GameStateBase",
+        "GameState",
+    }
+    for _, className in ipairs(gameStateClasses) do
+        local ok, gs = pcall(function()
+            return FindFirstOf(className)
+        end)
+        if ok and gs then
+            local okValid, valid = pcall(function()
+                return gs:IsValid()
+            end)
+            if okValid and valid then
+                local okArr, arr = pcall(function()
+                    return gs.PlayerArray
+                end)
+                if okArr and arr ~= nil then
+                    forEachCollection(arr, addState)
+                end
+                if #states > 0 then
+                    return states
+                end
+            end
+        end
+    end
+
+    -- Fallback: FindAllOf player states.
+    local found = {}
+    collectOfClass("PalPlayerState", found)
+    if #found == 0 then
+        collectOfClass("PlayerState", found)
+    end
+    for i = 1, #found do
+        addState(found[i])
+    end
+
+    return states
+end
+
+local function gatherPlayers()
+    local players = {}
+    local seenIds = {}
+    local localState = getLocalPlayerState()
+    local localStateAddr = objectAddress(localState)
+
+    local states = gatherPlayerStates()
+    local index = 0
+
+    for i = 1, #states do
+        local playerState = states[i]
+        local character = getPawnFromState(playerState)
+        local x, y, z, pawn = getLocationFromState(playerState, character)
+        if x ~= nil then
+            index = index + 1
+            if not character and pawn then
+                character = pawn
+            end
+
+            local id = readPlayerId(playerState, character) or ("state:" .. tostring(index))
+            if not seenIds[id] then
+                seenIds[id] = true
+
+                local name = readPlayerName(character, playerState)
+                if not name then
+                    name = "Player " .. tostring(index)
+                end
+
+                local isLocal = false
+                if localStateAddr and objectAddress(playerState) == localStateAddr then
+                    isLocal = true
+                else
+                    isLocal = isLocalPlayerState(playerState, character)
+                end
+
+                players[#players + 1] = {
+                    id = id,
+                    name = name,
+                    x = x,
+                    y = y,
+                    z = z or 0,
+                    isLocal = isLocal,
+                    relicPossessNum = readRelicPossessNumFrom(character, playerState),
+                }
+            end
+        end
+    end
+
+    -- Character scan fallback if no PlayerStates yielded positions.
+    if #players == 0 then
+        local chars = {}
+        collectOfClass("PalPlayerCharacter", chars)
+        for i = 1, #chars do
+            local character = chars[i]
+            local x, y, z = getActorLocation(character)
+            if x ~= nil then
+                local playerState = nil
+                pcall(function()
+                    playerState = character.PlayerState
+                end)
+                local id = readPlayerId(playerState, character) or ("char:" .. tostring(i))
+                if not seenIds[id] then
+                    seenIds[id] = true
+                    players[#players + 1] = {
+                        id = id,
+                        name = readPlayerName(character, playerState) or ("Player " .. tostring(i)),
+                        x = x,
+                        y = y,
+                        z = z or 0,
+                        isLocal = isLocalPlayerState(playerState, character),
+                        relicPossessNum = readRelicPossessNumFrom(character, playerState),
+                    }
+                end
+            end
+        end
+    end
+
+    table.sort(players, function(a, b)
+        if a.isLocal ~= b.isLocal then
+            return a.isLocal
+        end
+        return tostring(a.name) < tostring(b.name)
+    end)
+
+    return players
+end
+
+local function pickPrimaryPlayer(players)
+    if #players == 0 then
+        return nil
+    end
+    for i = 1, #players do
+        if players[i].isLocal then
+            return players[i]
+        end
+    end
+    return players[1]
+end
+
+local function anyPlayerNear(x, y, maxDist)
+    local max2 = maxDist * maxDist
+    for i = 1, #latestPlayers do
+        local p = latestPlayers[i]
+        local dx = p.x - x
+        local dy = p.y - y
+        if (dx * dx + dy * dy) < max2 then
+            return true
+        end
+    end
+    return false
 end
 
 local function actorLooksLikeRelic(actor)
@@ -257,16 +824,6 @@ local function actorLooksLikeRelic(actor)
         return true
     end
     return false
-end
-
-local function getActorLocation(actor)
-    local ok, loc = pcall(function()
-        return actor:K2_GetActorLocation()
-    end)
-    if ok and loc and loc.X ~= nil then
-        return loc.X, loc.Y, loc.Z
-    end
-    return nil
 end
 
 local function actorIsPicked(actor)
@@ -380,15 +937,19 @@ local function scanRelics()
 end
 
 local function tickPlayer()
-    local x, y, z = getPlayerLocation()
-    if x == nil then
-        return
-    end
-    latestPlayer = { x = x, y = y, z = z or 0 }
+    local players = gatherPlayers()
+    latestPlayers = players
+    latestPlayer = pickPrimaryPlayer(players)
 
-    local n = readRelicPossessNum()
-    if n ~= nil then
-        relicPossessNum = n
+    if latestPlayer and latestPlayer.relicPossessNum ~= nil then
+        relicPossessNum = latestPlayer.relicPossessNum
+    elseif #players > 0 then
+        for i = 1, #players do
+            if players[i].relicPossessNum ~= nil then
+                relicPossessNum = players[i].relicPossessNum
+                break
+            end
+        end
     end
 
     flush()
@@ -407,16 +968,11 @@ local function tickScan()
         end
     end
 
-    -- Nearby disappearance ⇒ collected (covers builds without a picked flag).
+    -- Nearby disappearance ⇒ collected (any nearby player on the server).
     for key, it in pairs(previousPresent) do
         if currentKeys[key] == nil and seenCollected[key] == nil then
-            local px, py = getPlayerLocation()
-            if px ~= nil then
-                local dx = px - it.x
-                local dy = py - it.y
-                if (dx * dx + dy * dy) < (30000 * 30000) then
-                    markCollected(it.x, it.y, it.z)
-                end
+            if anyPlayerNear(it.x, it.y, 30000) then
+                markCollected(it.x, it.y, it.z)
             end
         end
     end

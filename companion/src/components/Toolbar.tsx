@@ -19,7 +19,11 @@ type Props = {
   onToggleCategory: (id: string) => void
   onSetAllCategories: (enabled: boolean) => void
   player: PlayerPos | null
+  players: PlayerPos[]
+  trackedPlayerId: string | null
+  onTrackPlayer: (id: string) => void
   relicPossessNum: number | null
+  bridgeRev: string | null
 }
 
 const AREA_LABEL: Record<MapArea, string> = {
@@ -45,11 +49,17 @@ export function Toolbar({
   onToggleCategory,
   onSetAllCategories,
   player,
+  players,
+  trackedPlayerId,
+  onTrackPlayer,
   relicPossessNum,
+  bridgeRev,
 }: Props) {
   const remaining = total - collected
   const live =
     connectedHint || bridgeStatus.clients > 0 || Boolean(bridgeStatus.lastSeen)
+  const bridgeStale =
+    live && (!bridgeRev || players.some((p) => p.name.includes('restart Palworld')))
 
   return (
     <header className="toolbar">
@@ -66,22 +76,54 @@ export function Toolbar({
       </div>
 
       <div
-        className="player-chip"
+        className="player-chip player-track"
         title={
-          player
-            ? 'Live player from UE4SS bridge'
+          players.length > 0
+            ? 'All online players are drawn on the map. Choose who to follow for area switching + count.'
             : 'No live.json yet — fully close Palworld (and any trainer), then relaunch so UE4SS can inject'
         }
       >
         <span className={`dot ${player ? 'live' : 'idle'}`} />
-        {player
-          ? `Player ${player.mapX}, ${player.mapY}`
-          : 'Player offline — restart Palworld'}
+        {players.length === 0 ? (
+          <span>Player offline — restart Palworld</span>
+        ) : players.length === 1 && player ? (
+          <span>
+            {player.name} {player.mapX}, {player.mapY}
+          </span>
+        ) : (
+          <>
+            <label className="player-select-label" htmlFor="track-player">
+              Track
+            </label>
+            <select
+              id="track-player"
+              className="player-select"
+              value={trackedPlayerId ?? player?.id ?? ''}
+              onChange={(e) => onTrackPlayer(e.target.value)}
+            >
+              {players.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                  {p.isLocal ? ' (you)' : ''} · {p.mapX}, {p.mapY}
+                </option>
+              ))}
+            </select>
+          </>
+        )}
       </div>
 
       {relicPossessNum != null && (
         <div className="player-chip" title="RelicPossessNum from game memory">
           In-game count {relicPossessNum}
+        </div>
+      )}
+
+      {bridgeStale && (
+        <div
+          className="player-chip warn"
+          title="live.json is still from the old bridge. Fully close Palworld (and any trainer), then relaunch."
+        >
+          Restart Palworld to load multiplayer bridge
         </div>
       )}
 

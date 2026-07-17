@@ -16,6 +16,7 @@ type Props = {
   categories: CategoryInfo[]
   area: MapArea
   player: PlayerPos | null
+  players: PlayerPos[]
   onToggle: (id: string, nextCollected: boolean) => void
 }
 
@@ -27,6 +28,8 @@ type ViewState = {
 
 const PAD = 24
 
+const PLAYER_COLORS = ['#5ec8ff', '#ffb86b', '#c3a6ff', '#7dce6a', '#ff7eb6']
+
 export function MapView({
   markers,
   progress,
@@ -35,6 +38,7 @@ export function MapView({
   categories,
   area,
   player,
+  players,
   onToggle,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -218,34 +222,51 @@ export function MapView({
       ctx.stroke()
     }
 
-    // Layer 4: player on top of everything
-    if (player && player.area === area) {
-      const { u, v } = worldToUv(player.x, player.y, area)
+    // Layer 4: all players on top of markers
+    const trackedId = player?.id
+    for (let i = 0; i < players.length; i++) {
+      const pl = players[i]
+      if (pl.area !== area) continue
+      const { u, v } = worldToUv(pl.x, pl.y, area)
       const p = {
         x: u * MAP_SIZE * view.scale + view.offsetX,
         y: v * MAP_SIZE * view.scale + view.offsetY,
       }
+      const color = PLAYER_COLORS[i % PLAYER_COLORS.length]
+      const tracked = pl.id === trackedId
+
+      if (tracked) {
+        ctx.beginPath()
+        ctx.arc(p.x, p.y, r + 14, 0, Math.PI * 2)
+        ctx.strokeStyle = 'rgba(94, 200, 255, 0.35)'
+        ctx.lineWidth = 3
+        ctx.stroke()
+      }
 
       ctx.beginPath()
-      ctx.arc(p.x, p.y, r + 14, 0, Math.PI * 2)
-      ctx.strokeStyle = 'rgba(94, 200, 255, 0.35)'
-      ctx.lineWidth = 3
-      ctx.stroke()
-
-      ctx.beginPath()
-      ctx.arc(p.x, p.y, r + 6, 0, Math.PI * 2)
-      ctx.fillStyle = '#5ec8ff'
+      ctx.arc(p.x, p.y, tracked ? r + 6 : r + 4, 0, Math.PI * 2)
+      ctx.fillStyle = color
       ctx.fill()
-      ctx.lineWidth = 2.5
-      ctx.strokeStyle = '#ffffff'
+      ctx.lineWidth = tracked ? 2.5 : 1.5
+      ctx.strokeStyle = tracked ? '#ffffff' : 'rgba(255,255,255,0.75)'
       ctx.stroke()
 
       ctx.beginPath()
       ctx.arc(p.x, p.y, 2.5, 0, Math.PI * 2)
       ctx.fillStyle = '#062030'
       ctx.fill()
+
+      const label = pl.name || 'Player'
+      ctx.font = '600 11px ui-sans-serif, system-ui, sans-serif'
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'bottom'
+      ctx.lineWidth = 3
+      ctx.strokeStyle = 'rgba(6, 16, 12, 0.85)'
+      ctx.strokeText(label, p.x, p.y - (tracked ? r + 10 : r + 7))
+      ctx.fillStyle = tracked ? '#e8f7ff' : '#d8e8dc'
+      ctx.fillText(label, p.x, p.y - (tracked ? r + 10 : r + 7))
     }
-  }, [size, view, visible, progress, player, area, mapImage, colorByCategory])
+  }, [size, view, visible, progress, player, players, area, mapImage, colorByCategory])
 
   return (
     <div
@@ -312,8 +333,10 @@ export function MapView({
       <canvas ref={canvasRef} className="map-canvas" />
       <p className="map-hint">
         {visible.length} markers · scroll zoom · drag pan · right-click to toggle
-        {player
-          ? ` · you @ ${player.mapX}, ${player.mapY}`
+        {players.length > 0
+          ? ` · ${players.length} player${players.length === 1 ? '' : 's'}${
+              player ? ` · tracking ${player.name} @ ${player.mapX}, ${player.mapY}` : ''
+            }`
           : ' · player: waiting for bridge'}
       </p>
     </div>

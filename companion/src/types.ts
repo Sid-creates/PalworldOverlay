@@ -46,6 +46,8 @@ export type SeedFile = {
 }
 
 export type PlayerPos = {
+  id: string
+  name: string
   x: number
   y: number
   z: number
@@ -54,10 +56,30 @@ export type PlayerPos = {
   area: MapArea
   u: number
   v: number
+  isLocal: boolean
+  relicPossessNum: number | null
 }
 
 export type BridgeMessage =
-  | { type: 'player'; x: number; y: number; z: number }
+  | {
+      type: 'bridge_meta'
+      version: number
+      bridgeRev: string
+      playerCount: number
+    }
+  | {
+      type: 'players'
+      players: Array<{
+        id: string
+        name: string
+        x: number
+        y: number
+        z: number
+        local?: boolean
+        relicPossessNum?: number | null
+      }>
+    }
+  | { type: 'player'; x: number; y: number; z: number; id?: string; name?: string }
   | { type: 'effigy'; x: number; y: number; z: number; collected?: boolean }
   | {
       type: 'effigies_present'

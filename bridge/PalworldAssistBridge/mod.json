@@ -1,10 +1,10 @@
 {
   "mod_name": "PalworldAssistBridge",
-  "mod_version": "0.2.0",
+  "mod_version": "0.3.2",
   "mod_author": "PalworldAssist",
-  "mod_description": "Live player + relic/effigy state for the PalworldAssist companion (writes live.json, no console spawn).",
+  "mod_description": "Live multiplayer player positions + relic/effigy state for the PalworldAssist companion (writes live.json, no console spawn).",
   "Name": "PalworldAssistBridge",
-  "Description": "Live player + Lifmunk/Pal effigy state for the PalworldAssist companion",
-  "Version": "0.2.0",
+  "Description": "Live multiplayer player positions + Lifmunk/Pal effigy state for the PalworldAssist companion",
+  "Version": "0.3.2",
   "Scripts": ["Scripts/main.lua"]
 }

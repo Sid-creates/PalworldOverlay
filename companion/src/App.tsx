@@ -51,7 +51,16 @@ export default function App() {
   const markers = useMemo(() => seed?.markers ?? [], [seed])
   const categories = useMemo(() => seed?.categories ?? [], [seed])
 
-  const { player, status, connectedHint, relicPossessNum } = useBridge({
+  const {
+    player,
+    players,
+    trackedPlayerId,
+    setTrackedPlayerId,
+    status,
+    connectedHint,
+    relicPossessNum,
+    bridgeRev,
+  } = useBridge({
     markers,
     progress,
     setCollected,
@@ -134,7 +143,11 @@ export default function App() {
           )
         }}
         player={player}
+        players={players}
+        trackedPlayerId={trackedPlayerId}
+        onTrackPlayer={setTrackedPlayerId}
         relicPossessNum={relicPossessNum}
+        bridgeRev={bridgeRev}
       />
       <MapView
         markers={markers}
@@ -144,6 +157,7 @@ export default function App() {
         categories={categories}
         area={area}
         player={player}
+        players={players}
         onToggle={(id, next) => {
           void setCollected(id, next, 'manual')
         }}

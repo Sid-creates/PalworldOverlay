@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { findNearestMarkerId, projectWorld, worldToMap } from '../coords'
 import type {
   BridgeMessage,
@@ -18,14 +18,71 @@ type Options = {
   ) => Promise<void>
 }
 
+const TRACKED_KEY = 'palworldAssist.trackedPlayerId'
+
+function toPlayerPos(raw: {
+  id: string
+  name: string
+  x: number
+  y: number
+  z: number
+  local?: boolean
+  relicPossessNum?: number | null
+}): PlayerPos | null {
+  const x = Number(raw.x)
+  const y = Number(raw.y)
+  const z = Number(raw.z)
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null
+  const { mapX, mapY } = worldToMap(x, y)
+  const { area, u, v } = projectWorld(x, y)
+  return {
+    id: raw.id || `${Math.round(x)}:${Math.round(y)}`,
+    name: raw.name || 'Player',
+    x,
+    y,
+    z: Number.isFinite(z) ? z : 0,
+    mapX,
+    mapY,
+    area,
+    u,
+    v,
+    isLocal: Boolean(raw.local),
+    relicPossessNum:
+      typeof raw.relicPossessNum === 'number' && Number.isFinite(raw.relicPossessNum)
+        ? raw.relicPossessNum
+        : null,
+  }
+}
+
+function readStoredTrackedId(): string | null {
+  try {
+    return localStorage.getItem(TRACKED_KEY)
+  } catch {
+    return null
+  }
+}
+
+function writeStoredTrackedId(id: string | null) {
+  try {
+    if (id) localStorage.setItem(TRACKED_KEY, id)
+    else localStorage.removeItem(TRACKED_KEY)
+  } catch {
+    // ignore
+  }
+}
+
 export function useBridge({ markers, progress, setCollected }: Options) {
-  const [player, setPlayer] = useState<PlayerPos | null>(null)
+  const [players, setPlayers] = useState<PlayerPos[]>([])
+  const [trackedPlayerId, setTrackedPlayerIdState] = useState<string | null>(
+    () => readStoredTrackedId(),
+  )
   const [status, setStatus] = useState<BridgeStatus>({
     clients: 0,
     lastSeen: null,
   })
   const [connectedHint, setConnectedHint] = useState(false)
   const [relicPossessNum, setRelicPossessNum] = useState<number | null>(null)
+  const [bridgeRev, setBridgeRev] = useState<string | null>(null)
 
   const markersRef = useRef(markers)
   const progressRef = useRef(progress)
@@ -35,6 +92,11 @@ export function useBridge({ markers, progress, setCollected }: Options) {
   progressRef.current = progress
   setCollectedRef.current = setCollected
 
+  const setTrackedPlayerId = (id: string | null) => {
+    setTrackedPlayerIdState(id)
+    writeStoredTrackedId(id)
+  }
+
   useEffect(() => {
     const api = window.palworldAssist
 
@@ -42,23 +104,38 @@ export function useBridge({ markers, progress, setCollected }: Options) {
       setConnectedHint(true)
       const type = msg.type
       if (type === 'hello') return
+      if (type === 'bridge_meta') {
+        if (msg.bridgeRev) setBridgeRev(String(msg.bridgeRev))
+        return
+      }
+      if (type === 'players') {
+        const next: PlayerPos[] = []
+        if (Array.isArray(msg.players)) {
+          for (const raw of msg.players) {
+            if (!raw) continue
+            const pos = toPlayerPos(raw)
+            if (pos) next.push(pos)
+          }
+        }
+        setPlayers(next)
+        const local = next.find((p) => p.isLocal)
+        const preferred = local ?? next[0]
+        if (preferred?.relicPossessNum != null) {
+          setRelicPossessNum(preferred.relicPossessNum)
+        }
+        return
+      }
       if (type === 'player') {
-        const x = Number(msg.x)
-        const y = Number(msg.y)
-        const z = Number(msg.z)
-        if (!Number.isFinite(x) || !Number.isFinite(y)) return
-        const { mapX, mapY } = worldToMap(x, y)
-        const { area, u, v } = projectWorld(x, y)
-        setPlayer({
-          x,
-          y,
-          z: Number.isFinite(z) ? z : 0,
-          mapX,
-          mapY,
-          area,
-          u,
-          v,
+        // Legacy single-player messages.
+        const pos = toPlayerPos({
+          id: String(msg.id ?? 'player'),
+          name: String(msg.name ?? 'Player'),
+          x: Number(msg.x),
+          y: Number(msg.y),
+          z: Number(msg.z),
+          local: true,
         })
+        if (pos) setPlayers([pos])
         return
       }
       if (type === 'effigy') {
@@ -120,5 +197,31 @@ export function useBridge({ markers, progress, setCollected }: Options) {
     return () => window.clearInterval(timer)
   }, [])
 
-  return { player, status, connectedHint, relicPossessNum }
+  const player = useMemo(() => {
+    if (players.length === 0) return null
+    if (trackedPlayerId) {
+      const tracked = players.find((p) => p.id === trackedPlayerId)
+      if (tracked) return tracked
+      const byName = players.find((p) => p.name === trackedPlayerId)
+      if (byName) return byName
+    }
+    return players.find((p) => p.isLocal) ?? players[0] ?? null
+  }, [players, trackedPlayerId])
+
+  useEffect(() => {
+    if (player?.relicPossessNum != null) {
+      setRelicPossessNum(player.relicPossessNum)
+    }
+  }, [player?.id, player?.relicPossessNum])
+
+  return {
+    player,
+    players,
+    trackedPlayerId: player?.id ?? trackedPlayerId,
+    setTrackedPlayerId,
+    status,
+    connectedHint,
+    relicPossessNum,
+    bridgeRev,
+  }
 }

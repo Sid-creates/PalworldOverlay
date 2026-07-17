@@ -36,12 +36,47 @@ export function startLiveWatcher({ onMessage, onStatus }) {
       const data = JSON.parse(raw)
       lastSeen = new Date().toISOString()
 
-      if (data.player && typeof data.player.x === 'number') {
+      if (typeof data.bridgeRev === 'string' || typeof data.version === 'number') {
         onMessage({
-          type: 'player',
-          x: data.player.x,
-          y: data.player.y,
-          z: data.player.z ?? 0,
+          type: 'bridge_meta',
+          version: Number(data.version) || 0,
+          bridgeRev: String(data.bridgeRev ?? ''),
+          playerCount: Number(data.playerCount) || 0,
+        })
+      }
+
+      if (Array.isArray(data.players) && data.players.length > 0) {
+        onMessage({
+          type: 'players',
+          players: data.players.map((p) => ({
+            id: String(p?.id ?? ''),
+            name: String(p?.name ?? 'Player'),
+            x: Number(p?.x),
+            y: Number(p?.y),
+            z: Number(p?.z ?? 0),
+            local: Boolean(p?.local),
+            relicPossessNum:
+              typeof p?.relicPossessNum === 'number' ? p.relicPossessNum : null,
+          })),
+        })
+      } else if (data.player && typeof data.player.x === 'number') {
+        // Old bridge still running in memory — fully restart Palworld.
+        onMessage({
+          type: 'players',
+          players: [
+            {
+              id: String(data.player.id ?? 'player'),
+              name: String(data.player.name || 'Player (restart Palworld)'),
+              x: data.player.x,
+              y: data.player.y,
+              z: data.player.z ?? 0,
+              local: Boolean(data.player.local ?? true),
+              relicPossessNum:
+                typeof data.relicPossessNum === 'number'
+                  ? data.relicPossessNum
+                  : null,
+            },
+          ],
         })
       }
 

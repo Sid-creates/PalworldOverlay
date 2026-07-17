@@ -8,7 +8,7 @@ Progress is stored locally on your machine.
 
 - Full Palpagos + World Tree map overlay with **405** seeded relic locations
 - Filter by remaining, collected, or all; toggle categories (capture, swim, jump, climb, etc.)
-- Live player cursor when the game bridge is connected
+- Live player cursors when the game bridge is connected (multiplayer: all players on the map + pick who to track)
 - Auto check-off on pickup via UE4SS memory scanning
 - Manual toggle (right-click / double-click a marker)
 - Electron overlay: **F8** hide/show · `Ctrl+Shift+A` always-on-top · system tray
@@ -163,12 +163,18 @@ Coordinates derived from [palworld-save-pal](https://github.com/oMaN-Rod/palworl
 
 Close the window to hide to tray; quit from the tray menu.
 
+## Multiplayer
+
+The UE4SS bridge enumerates every `PalPlayerCharacter` on the client and writes them to `live.json` as `players[]` (name + position). The overlay draws **all** of them and lets you pick who to track (area auto-follow + in-game relic count). Choice is remembered locally.
+
+If names show as `Player 1` / `Player 2`, the game didn't expose a nick on that build — positions still work. After updating the bridge mod, fully restart Palworld so UE4SS reloads it.
+
 ## Known limits
 
 - Save files store an effigy **count**, not per-location state — live tracking needs the bridge.
 - Only **loaded/nearby** world objects are visible to the game; distant markers stay on the static seed until you get close.
 - Actor class names can change after Palworld patches; the Lua scanner may need updates.
-- Singleplayer / local focus for v1.
+- Dedicated-server hosts without a local client pawn may not see remote players until they are replicated to your client.
 
 ## Repo layout
 
