@@ -5,7 +5,6 @@ export const DISAPPEAR_CONFIRM_CM: number
 export const PRESENT_MAX: number
 export const MATCH_MAX_CM: number
 export const POSSESS_PICK_MAX_CM: number
-export const POSSESS_ON_COLLECTED_CM: number
 export const STILL_PRESENT_CM: number
 
 export function isFiniteNumber(n: unknown): n is number

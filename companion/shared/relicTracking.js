@@ -10,8 +10,6 @@ export const DISAPPEAR_CONFIRM_CM = 45_000
 export const PRESENT_MAX = 48
 export const MATCH_MAX_CM = 12_000
 export const POSSESS_PICK_MAX_CM = 12_000
-/** If player still stands on a just-collected seed, don't possess-mark a neighbor. */
-export const POSSESS_ON_COLLECTED_CM = 5_000
 /** Treat a watched relic as still present if any sample is within this distance. */
 export const STILL_PRESENT_CM = 600
 

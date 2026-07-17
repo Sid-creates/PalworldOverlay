@@ -15,7 +15,7 @@
     - Skip unchanged live.json bodies (ignore updatedAt)
 ]]
 
-local BRIDGE_REV = "0.4.1"
+local BRIDGE_REV = "0.4.2"
 local TICK_MS = 500
 local PLAYER_EVERY_TICKS = 4 -- 2s
 local SCAN_HOT_TICKS = 3 -- 1.5s while standing on a watched relic
@@ -25,7 +25,8 @@ local STICKY_DROP_CM = 180000
 local DISAPPEAR_CONFIRM_CM = 45000
 local PRESENT_MAX = 48
 local WATCH_MAX = 256
-local POSSESS_PICK_CM = 25000
+local POSSESS_PICK_CM = 12000
+local STILL_PRESENT_CM = 600
 local HOT_NEAR_CM = 15000
 
 local lastFlushBody = nil
@@ -93,11 +94,11 @@ local function canWrite(path)
 end
 
 local function roundKey(x, y, z)
+    -- XY-only: Z jitter during combat was splitting one effigy across buckets.
     return string.format(
-        "%d:%d:%d",
+        "%d:%d",
         math.floor(x / 200 + 0.5),
-        math.floor(y / 200 + 0.5),
-        math.floor(z / 200 + 0.5)
+        math.floor(y / 200 + 0.5)
     )
 end
 
@@ -1028,17 +1029,32 @@ end
 
 local function detectDisappeared(samples)
     local currentKeys = {}
+    local valid = {}
     for i = 1, #samples do
         local s = samples[i]
         currentKeys[roundKey(s.x, s.y, s.z)] = true
+        valid[#valid + 1] = s
     end
 
     local confirm2 = DISAPPEAR_CONFIRM_CM * DISAPPEAR_CONFIRM_CM
+    local still2 = STILL_PRESENT_CM * STILL_PRESENT_CM
     for key, it in pairs(watchedRelics) do
         if currentKeys[key] == nil and seenCollected[key] == nil then
-            local d2 = minDist2ToPlayers(it.x, it.y)
-            if d2 ~= nil and d2 <= confirm2 then
-                markCollected(it.x, it.y, it.z)
+            local stillHere = false
+            for i = 1, #valid do
+                local s = valid[i]
+                local dx = s.x - it.x
+                local dy = s.y - it.y
+                if (dx * dx + dy * dy) <= still2 then
+                    stillHere = true
+                    break
+                end
+            end
+            if not stillHere then
+                local d2 = minDist2ToPlayers(it.x, it.y)
+                if d2 ~= nil and d2 <= confirm2 then
+                    markCollected(it.x, it.y, it.z)
+                end
             end
         end
     end
