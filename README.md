@@ -31,18 +31,17 @@ From the repo root, double-click **`install.bat`** or run:
 .\install.ps1
 ```
 
-If Node install fails with a permissions error, right-click **`install.bat` → Run as administrator** once.
+If something fails on permissions, right-click **`install.bat` → Run as administrator** once. Close Palworld before installing the bridge mod.
 
-The installer will:
+The installer auto-recovers common failures (retries, mirrors, prompts):
 
-1. Install Node.js LTS if missing / too old
-2. Download map textures into `companion/public/maps/`
-3. Run `npm install` for the companion app
-4. Auto-detect your Palworld `Win64` folder (Steam libraries + common paths)
-5. Install UE4SS if missing (optional prompt)
-6. Copy and enable the `PalworldAssistBridge` mod in `Mods\mods.txt`
-7. Create `%LOCALAPPDATA%\PalworldAssist\`
-8. Create **`start-overlay.bat`** to launch the overlay
+1. Install Node.js LTS if missing / too old (`winget` or MSI)
+2. Download map textures (retries + jsDelivr fallback; can continue without maps)
+3. `npm install` with cache-clean / fresh `node_modules` retries
+4. Auto-detect Palworld (Steam libraries, common drives, folder picker)
+5. Install UE4SS if missing (optional; can continue without it)
+6. Copy/enable `PalworldAssistBridge` (closes game if files are locked)
+7. Create `%LOCALAPPDATA%\PalworldAssist\` + **`start-overlay.bat`**
 
 Options:
 
@@ -51,6 +50,7 @@ Options:
 .\install.ps1 -Launch            # install, then start the overlay
 .\install.ps1 -SkipUe4ss         # skip UE4SS download (you already have it)
 .\install.ps1 -SkipNodeInstall   # do not auto-install Node
+.\install.ps1 -SkipMaps          # skip map texture download
 ```
 
 After install, run **`start-overlay.bat`**, then fully restart Palworld.
